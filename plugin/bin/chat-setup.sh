@@ -5,18 +5,22 @@
 #   chat-setup.sh <owner/repo>                    Join an existing backend.
 #   chat-setup.sh <owner/repo> --init             Create and initialize a new backend.
 #   chat-setup.sh <owner/repo> --init --root DIR  Use DIR as the chat root (default: chat).
+#   chat-setup.sh <owner/repo> --add-room <name>  Create a new room in an existing backend.
 
 source "$(dirname "$0")/_common.sh"
 
 REPO=""
 MODE="join"
 ROOT="chat"
+ADD_ROOM=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --init) MODE="init"; shift ;;
     --root) ROOT="$2"; shift 2 ;;
     --root=*) ROOT="${1#--root=}"; shift ;;
+    --add-room) ADD_ROOM="$2"; shift 2 ;;
+    --add-room=*) ADD_ROOM="${1#--add-room=}"; shift ;;
     -h|--help)
       grep -E '^#( |$)' "$0" | sed 's/^# \{0,1\}//'
       exit 0
@@ -150,6 +154,62 @@ EOF
   GENERAL_ISSUE=$(echo "$marker" | jq -r '.rooms.general.issue // empty')
   CHAT_ROOT=$(echo "$marker" | jq -r '.root // "chat"')
 }
+
+add_room() {
+  local repo="$1" room_name="$2"
+  local slug
+  slug=$(vw_room_slug "$room_name")
+
+  # Read current marker + its SHA (needed for the update PUT).
+  local marker marker_sha
+  marker=$(vw_get_marker "$repo" || true)
+  if [[ -z "$marker" ]]; then
+    echo "vault-whisper: $repo is not a vault-whisper backend (no marker file)." >&2
+    exit 1
+  fi
+  marker_sha=$(gh api "repos/$repo/contents/$VW_MARKER_PATH" --jq '.sha')
+
+  # Bail if the room already exists.
+  existing=$(echo "$marker" | jq -r --arg s "$slug" '.rooms[$s].issue // empty')
+  if [[ -n "$existing" ]]; then
+    echo "vault-whisper: room '#$slug' already exists (issue #$existing)." >&2
+    exit 1
+  fi
+
+  # Create sentinel issue.
+  echo "Creating sentinel issue for #$slug..."
+  local issue_json issue_number
+  issue_json=$(gh api -X POST "repos/$repo/issues" \
+    -f title="#$slug" \
+    -f body="Sentinel issue for the #$slug room. Do not delete. Subscribe to this issue to receive messages.")
+  issue_number=$(echo "$issue_json" | jq -r .number)
+  echo "  issue #$issue_number"
+
+  # Patch marker with new room.
+  local updated_marker
+  updated_marker=$(echo "$marker" | jq --arg s "$slug" --argjson n "$issue_number" \
+    '.rooms[$s] = {issue: $n}')
+  echo "Updating backend marker..."
+  vw_put_file "$repo" "$VW_MARKER_PATH" \
+    "add room #$slug (refs #$issue_number)" \
+    "$updated_marker" \
+    "$marker_sha"
+
+  # Subscribe the current user to the new sentinel issue.
+  vw_subscribe_issue "$repo" "$issue_number" "$USER"
+
+  echo "Room #$slug created (issue #$issue_number)."
+  echo "Anyone can now join it with: /chat-join $slug"
+}
+
+if [[ -n "$ADD_ROOM" ]]; then
+  [[ -n "$REPO" ]] || { echo "vault-whisper: --add-room requires owner/repo as first argument" >&2; exit 1; }
+  vw_check_tools
+  vw_check_auth
+  USER=$(gh api user -q .login)
+  add_room "$REPO" "$ADD_ROOM"
+  exit 0
+fi
 
 if [[ "$MODE" == "init" ]]; then
   init_backend "$REPO" "$ROOT"
