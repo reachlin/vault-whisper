@@ -10,8 +10,8 @@ Run the setup script for vault-whisper:
 ```
 
 Usage:
-- `/chat-setup` — show the current config (repo, user, root, joined rooms) when vault-whisper is already configured.
-- `/chat-setup owner/repo` — join an existing vault-whisper backend.
+- `/chat-setup` — if already configured, show status; if not, join the default community backend (`reachlin/vault-whisper`) and prompt to say hello.
+- `/chat-setup owner/repo` — join a specific vault-whisper backend.
 - `/chat-setup owner/repo --init` — create and initialize a new backend (first user on a team).
 - `/chat-setup owner/repo --init --root DIR` — use `DIR` as the chat root folder (default: `chat`).
 

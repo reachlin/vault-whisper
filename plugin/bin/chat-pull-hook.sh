@@ -12,7 +12,7 @@
 # Silent failure — we never want to block a user prompt because chat is broken.
 set +e
 
-output=$("$(dirname "$0")/chat-inbox.sh" 2>/dev/null)
+output=$("$(dirname "$0")/chat-recv.sh" 2>/dev/null)
 if [[ -n "$output" && "$output" != "(no new messages)" ]]; then
   printf '[vault-whisper: new messages since last prompt]\n%s\n' "$output"
 fi

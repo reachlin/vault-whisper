@@ -31,6 +31,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+DEFAULT_REPO="reachlin/vault-whisper"
+
 if [[ -z "$REPO" ]]; then
   # No arguments → show current status if configured.
   if [[ -f "$VW_CONFIG" ]]; then
@@ -59,15 +61,9 @@ if [[ -z "$REPO" ]]; then
     fi
     exit 0
   fi
-  cat >&2 <<EOF
-vault-whisper is not configured.
-
-usage: /chat-setup                                 show current status (when configured)
-       /chat-setup <owner/repo>                    join an existing backend
-       /chat-setup <owner/repo> --init             create and initialize a new backend
-       /chat-setup <owner/repo> --init --root DIR  use DIR as the chat root (default: chat)
-EOF
-  exit 1
+  # Not yet configured — default to the community repo.
+  echo "No repo specified; using default: $DEFAULT_REPO"
+  REPO="$DEFAULT_REPO"
 fi
 
 vw_check_tools
@@ -197,5 +193,6 @@ Setup complete.
   root:    $CHAT_ROOT
   config:  $VW_CONFIG
 
-Try: /chat-send #general "hello from $USER"
+Say hello to the community:
+  /chat-send general hello from $USER
 EOF

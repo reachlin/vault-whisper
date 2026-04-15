@@ -17,7 +17,7 @@ if [[ -f "$CACHE" ]]; then
   fi
 fi
 
-count=$("$(dirname "$0")/bin/chat-inbox.sh" --count 2>/dev/null || echo 0)
+count=$("$(dirname "$0")/bin/chat-recv.sh" --count 2>/dev/null || echo 0)
 
 if [[ "$count" -gt 0 ]]; then
   out="💬 $count"
