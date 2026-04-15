@@ -2,12 +2,12 @@
 description: Fetch and display unread chat messages across joined rooms
 ---
 
-Run the recv script with ANSI color forced on so the message body renders with the blue background:
+Run the recv script with color enabled:
 
 ```
 ~/.claude/plugins/vault-whisper/bin/chat-recv.sh --color
 ```
 
-The script prints a room header line (`#room  yyyy-mm-dd`), then each message as `=> hh:mm:ss <user> <body>` for new messages and `   hh:mm:ss <user> <body>` for history. Always shows at least 3 recent messages. New messages are marked with `=>`. The message body is shown with a blue background and white text via ANSI escape codes. If there are no new messages it prints `(no new messages)`.
+The script prints a room header line (`#room  yyyy-mm-dd`), then each message as `=> hh:mm:ss <user> <body>` for new messages and `   hh:mm:ss <user> <body>` for history. Always shows at least 3 recent messages. New messages are marked with `=>`. If there are no new messages it prints `(no new messages)`.
 
-Print the script's output as your text response so it appears unfolded. The bash tool result will be folded — that's fine, users can ignore it. Preserve ANSI escape codes in your output so colors render in the terminal.
+Do NOT echo the output again as text — the bash tool block already shows it once with ANSI colors rendered. Your only response should be a brief note if there are new messages (e.g. "New messages in #general") or nothing at all.
