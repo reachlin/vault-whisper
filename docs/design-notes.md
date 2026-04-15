@@ -267,7 +267,7 @@ backend or an unrelated repo?":
 }
 ```
 
-### The two setup commands
+### The setup commands
 
 - **`/chat-setup <owner/repo>`** — join an existing backend. Verifies
   `gh` auth, reads the marker file, writes local config. Errors clearly
@@ -280,8 +280,28 @@ backend or an unrelated repo?":
   local config. The first person in a team runs this once; everyone
   else uses plain `/chat-setup`.
 
+- **`/chat-setup <owner/repo> --init --root DIR`** — same, but places
+  all chat state under `DIR/` in the backend repo. Default is `chat/`.
+  The root is stored in the marker file so joining users pick it up
+  automatically. Useful when dogfooding on a repo that also contains
+  real code — keeps chat data cleanly segregated from source.
+
 Interactive prompts are avoided because slash commands run under
 Claude's Bash tool and have no stdin. Everything is flag-driven.
+
+### Subscription mechanics
+
+GitHub has no public "subscribe to issue" API. Issue authors are
+auto-subscribed, but joining users need another way in. vault-whisper
+uses **assignees** for this: joining a room adds you as an assignee on
+the sentinel issue (`POST /repos/{o}/{r}/issues/{n}/assignees`). GitHub
+treats assignees as participants and routes cross-reference events to
+their `/notifications` feed. Nice side effect: the assignees list on
+the sentinel issue is a visible "who is in this room."
+
+Alternatives considered: watching the whole repo (too broad — you'd get
+notified about PRs, other issues, etc.), or posting a noise comment on
+the sentinel issue (adds clutter). Assignees are the cleanest option.
 
 ### Joining a room after setup
 

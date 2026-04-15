@@ -31,8 +31,15 @@ vw_load_config() {
   }
   VW_REPO=$(jq -r '.repo // empty' "$VW_CONFIG")
   VW_USER=$(jq -r '.user // empty' "$VW_CONFIG")
+  VW_ROOT=$(jq -r '.root // "chat"' "$VW_CONFIG")
   [[ -n "$VW_REPO" ]] || { echo "vault-whisper: config missing 'repo'" >&2; exit 1; }
   [[ -n "$VW_USER" ]] || { echo "vault-whisper: config missing 'user'" >&2; exit 1; }
+}
+
+vw_room_folder() {
+  # Full folder path inside the backend repo for a room slug.
+  # Usage: vw_room_folder <slug>
+  printf '%s/rooms/%s' "$VW_ROOT" "$1"
 }
 
 vw_save_config() {
@@ -78,6 +85,19 @@ vw_get_marker() {
   # Prints marker JSON to stdout, or exits non-zero if not present.
   gh api "repos/$1/contents/$VW_MARKER_PATH" --jq '.content' 2>/dev/null \
     | base64 -d 2>/dev/null
+}
+
+vw_subscribe_issue() {
+  # Subscribe $user to issue $n by adding them as an assignee.
+  # Why assignees: GitHub has no public "subscribe to issue" API; assigning
+  # a user makes them a "participant" which causes cross-reference events to
+  # show up in their /notifications feed. Doubles as a visible membership
+  # indicator on the sentinel issue.
+  #
+  # Usage: vw_subscribe_issue <repo> <issue_number> <username>
+  local repo="$1" issue="$2" user="$3"
+  gh api -X POST "repos/$repo/issues/$issue/assignees" \
+    -f "assignees[]=$user" >/dev/null 2>&1 || true
 }
 
 vw_put_file() {

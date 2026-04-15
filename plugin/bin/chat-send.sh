@@ -53,7 +53,7 @@ PAYLOAD=$(jq -n \
 
 # Unique path: no two writers can collide.
 FILENAME="$(vw_now_filename)-${VW_USER}-${MSG_ID:0:8}.json"
-PATH_IN_REPO="rooms/$SLUG/$FILENAME"
+PATH_IN_REPO="$(vw_room_folder "$SLUG")/$FILENAME"
 
 # Commit message references the sentinel issue → GitHub notifies subscribers.
 COMMIT_MSG="[$SLUG] $VW_USER: $(printf '%s' "$MESSAGE" | head -c 60) (refs #$ISSUE)"

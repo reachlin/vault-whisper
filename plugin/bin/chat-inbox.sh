@@ -21,9 +21,8 @@ output=""
 
 while IFS= read -r room; do
   [[ -z "$room" ]] && continue
-  folder=$(jq -r --arg r "$room" '.rooms[$r].folder // empty' "$VW_CONFIG")
+  folder=$(vw_room_folder "$room")
   last_seen=$(jq -r --arg r "$room" '.rooms[$r].last_seen_commit // empty' "$VW_CONFIG")
-  [[ -z "$folder" ]] && continue
 
   # Get commits touching this folder, newest first.
   commits_json=$(gh api "repos/$VW_REPO/commits?path=$folder&per_page=50" 2>/dev/null || echo "[]")

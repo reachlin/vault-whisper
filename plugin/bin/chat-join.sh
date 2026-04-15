@@ -26,7 +26,6 @@ if [[ -z "$marker" ]]; then
 fi
 
 ISSUE=$(echo "$marker" | jq -r --arg s "$SLUG" '.rooms[$s].issue // empty')
-FOLDER=$(echo "$marker" | jq -r --arg s "$SLUG" '.rooms[$s].folder // empty')
 
 if [[ -z "$ISSUE" ]]; then
   echo "vault-whisper: room '#$SLUG' does not exist in $VW_REPO." >&2
@@ -34,15 +33,13 @@ if [[ -z "$ISSUE" ]]; then
   exit 1
 fi
 
-# Subscribe to the sentinel issue.
-gh api -X PUT "repos/$VW_REPO/issues/$ISSUE/subscription" \
-  -f subscribed=true >/dev/null
+# Subscribe to the sentinel issue (via self-assignment — see _common.sh).
+vw_subscribe_issue "$VW_REPO" "$ISSUE" "$VW_USER"
 
 # Record it in local config.
 vw_update_config "
   .rooms[\"$SLUG\"] = {
     issue: $ISSUE,
-    folder: \"$FOLDER\",
     last_seen_commit: null
   }
 "

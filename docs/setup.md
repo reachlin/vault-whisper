@@ -32,12 +32,22 @@ Then merge `plugin/settings.example.json` into `~/.claude/settings.json` so the 
 
 This will:
 1. Create `reachlin/my-team-chat` as a **private** repo on GitHub.
-2. Open a sentinel issue `#general` (issue #1) in the new repo.
+2. Open a sentinel issue `#general` in the new repo.
 3. Write a `.vault-whisper.json` marker file via the Contents API.
 4. Write your local config to `~/.config/vault-whisper/config.json`.
-5. Subscribe you to the `#general` sentinel issue.
+5. Subscribe you to the `#general` sentinel issue (you're auto-subscribed as the issue author).
+
+All chat state (messages, rooms, etc.) lives under a **root folder** in the repo — default `chat/`. To use a different folder, pass `--root`:
+
+```
+/chat-setup reachlin/my-team-chat --init --root team-messages
+```
+
+The root is stored in the marker file, so other users joining don't need to specify it — they'll pick it up automatically.
 
 Now invite your teammates to the repo as **collaborators** on GitHub (Settings → Collaborators). Without being collaborators they can't read or write the private repo.
+
+When a teammate joins (`/chat-setup …`), they're added as an **assignee** on the sentinel issue. Assignment is how vault-whisper subscribes users to rooms (GitHub has no public "subscribe to issue" API, but assignees receive notifications for cross-reference events). The assignees list on the sentinel issue doubles as a visible "who is in this room."
 
 ## Joining an existing backend
 
