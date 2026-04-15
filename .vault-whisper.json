@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "root": "chat",
+  "rooms": {
+    "general": {
+      "issue": 2
+    }
+  }
+}
