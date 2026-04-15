@@ -149,11 +149,17 @@ while IFS= read -r room; do
     total_shown=$((total_shown + old_count))
   fi
 
-  # Collect per-room output with a header line (room name + date).
+  # Collect per-room output with a header line (room name + date + counts).
   room_combined="${room_old}${room_new}"
   if [[ -n "$room_combined" ]]; then
     room_date=$(echo "$commits_json" | jq -r '.[0].commit.committer.date // "" | .[0:10]')
-    new_output+="${VW_ROOM}#${room}  ${room_date}${VW_RESET}"$'\n'
+    room_msg_count=$(echo -n "$room_combined" | grep -c '^' || true)
+    if [[ $new_count -gt 0 ]]; then
+      room_stats="  (${room_msg_count} msgs, ${new_count} new)"
+    else
+      room_stats="  (${room_msg_count} msgs)"
+    fi
+    new_output+="${VW_ROOM}#${room}  ${room_date}${room_stats}${VW_RESET}"$'\n'
     new_output+="$room_combined"$'\n'
   fi
 done < <(jq -r '.rooms | keys[]' "$VW_CONFIG")
