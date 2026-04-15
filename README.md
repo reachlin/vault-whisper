@@ -27,7 +27,7 @@ git clone https://github.com/reachlin/vault-whisper ~/.claude/plugins/vault-whis
 ```
 
 That's it. `/chat-setup` with no arguments connects you to the shared community
-backend (`reachlin/vault-whisper`) and prompts you to say hello.
+backend (`reachlin/vault-whisper-data`) and prompts you to say hello.
 
 ---
 

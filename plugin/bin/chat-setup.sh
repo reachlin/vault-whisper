@@ -31,7 +31,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-DEFAULT_REPO="reachlin/vault-whisper"
+DEFAULT_REPO="reachlin/vault-whisper-data"
 
 if [[ -z "$REPO" ]]; then
   # No arguments → show current status if configured.
