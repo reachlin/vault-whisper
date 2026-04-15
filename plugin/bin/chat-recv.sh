@@ -45,11 +45,12 @@ if [[ "$COLOR" == "auto" ]]; then
 fi
 
 if [[ "$COLOR" == "always" ]]; then
-  # Blue background, bright white foreground.
-  VW_BG=$'\033[44;97m'
+  VW_BG=$'\033[44;97m'      # blue background, bright white — message body
+  VW_ROOM=$'\033[1;96m'     # bold bright cyan — room header
   VW_RESET=$'\033[0m'
 else
   VW_BG=""
+  VW_ROOM=""
   VW_RESET=""
 fi
 
@@ -152,7 +153,7 @@ while IFS= read -r room; do
   room_combined="${room_old}${room_new}"
   if [[ -n "$room_combined" ]]; then
     room_date=$(echo "$commits_json" | jq -r '.[0].commit.committer.date // "" | .[0:10]')
-    new_output+="#${room}  ${room_date}"$'\n'
+    new_output+="${VW_ROOM}#${room}  ${room_date}${VW_RESET}"$'\n'
     new_output+="$room_combined"$'\n'
   fi
 done < <(jq -r '.rooms | keys[]' "$VW_CONFIG")
