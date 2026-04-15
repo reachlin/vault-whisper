@@ -1,0 +1,14 @@
+{
+  "_comment": "Example Claude Code settings.json additions for vault-whisper. Merge these into your existing ~/.claude/settings.json.",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "command": "~/.claude/plugins/vault-whisper/bin/chat-pull-hook.sh"
+      }
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "~/.claude/plugins/vault-whisper/statusline.sh"
+  }
+}

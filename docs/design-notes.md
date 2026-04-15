@@ -174,14 +174,129 @@ Other open questions to resolve later:
   (manual), `UserPromptSubmit` hook (automatic, prepends unread to
   context), and a status line showing unread count.
 
+## Decision: plugin, not MCP
+
+Revisited the MCP question while scoping v1. MCP exists so Claude (the
+model) can autonomously call tools as part of its reasoning. That's the
+right shape when chat is something Claude *does* ("after the build
+finishes, tell alice"). It is not the right shape when chat is something
+the *user* does and Claude is just a bystander — which is what v1 is.
+
+For human-driven chat, slash commands + a hook + a status line are
+strictly lighter than an MCP server:
+
+|                         | MCP server                | Slash commands + hook           |
+|-------------------------|---------------------------|---------------------------------|
+| Process model           | Long-running stdio server | Stateless — script runs, exits  |
+| Languages               | Python/Node + MCP SDK     | Bash + `gh`                     |
+| Lines of code           | ~300                      | ~80                             |
+| Config                  | `mcp.json`, tool schemas  | `settings.json` + markdown      |
+| Who initiates send      | Claude or user            | User only                       |
+| Surfaces unread         | Hard (MCP can't push)     | Status line + hook — native     |
+| Debuggability           | JSON-RPC traces           | `bash -x`                       |
+
+**Decision:** v1 ships as a plugin containing slash commands, a
+`UserPromptSubmit` hook, and a status line script. No MCP. If agentic
+send ever becomes interesting ("Claude, notify alice when CI is green"),
+adding a single MCP tool on top of the existing bash scripts is a
+30-minute change, not a foundational one.
+
+## Plugin layout
+
+```
+plugin/
+├── commands/          slash-command markdown wrappers
+│   ├── chat-setup.md
+│   ├── chat-send.md
+│   ├── chat-dm.md
+│   ├── chat-inbox.md
+│   ├── chat-join.md
+│   ├── chat-rooms.md
+│   └── chat-history.md
+├── bin/               actual logic (bash + gh api)
+│   ├── _common.sh
+│   ├── chat-setup.sh
+│   ├── chat-send.sh
+│   ├── chat-inbox.sh
+│   └── chat-pull-hook.sh
+├── statusline.sh
+└── settings.example.json
+```
+
+Slash commands are thin markdown wrappers that invoke a bin script. All
+real work happens in bash scripts under `bin/`. Shared helpers live in
+`_common.sh` (config loading, `gh api` wrappers, timestamp/slug helpers).
+
+## Setup flow
+
+vault-whisper needs two pieces of per-user state:
+
+1. **Which backend repo to use** — the GitHub repo that holds messages
+   and sentinel issues. All users chatting together must point at the
+   same repo.
+2. **The user's own identity** — their GitHub username, which we read
+   from `gh api user`.
+
+Both are stored in `~/.config/vault-whisper/config.json` (chmod 600).
+Schema:
+
+```json
+{
+  "repo": "reachlin/my-chat-backend",
+  "user": "reachlin",
+  "rooms": {
+    "general": {
+      "issue": 1,
+      "folder": "rooms/general",
+      "last_seen_commit": "abc123..."
+    }
+  }
+}
+```
+
+The backend repo itself has a marker file at its root,
+`.vault-whisper.json`, so any user can detect "is this a vault-whisper
+backend or an unrelated repo?":
+
+```json
+{
+  "version": 1,
+  "rooms": {
+    "general": { "issue": 1 }
+  }
+}
+```
+
+### The two setup commands
+
+- **`/chat-setup <owner/repo>`** — join an existing backend. Verifies
+  `gh` auth, reads the marker file, writes local config. Errors clearly
+  if the repo doesn't exist or isn't a vault-whisper backend (and tells
+  the user how to initialize one).
+
+- **`/chat-setup <owner/repo> --init`** — create a new backend. Creates
+  the repo (private) if it doesn't exist, writes the marker file via
+  the Contents API, opens a sentinel issue for `#general`, then writes
+  local config. The first person in a team runs this once; everyone
+  else uses plain `/chat-setup`.
+
+Interactive prompts are avoided because slash commands run under
+Claude's Bash tool and have no stdin. Everything is flag-driven.
+
+### Joining a room after setup
+
+`/chat-join #general` subscribes the user to the `#general` sentinel
+issue (`PUT /repos/{o}/{r}/issues/{n}/subscription`) so they start
+getting notifications, and records the room's `last_seen_commit` in
+local config so the inbox hook knows where to start reading.
+
 ## Next steps
 
-1. Run `scripts/verify-notification.sh` and confirm the cross-reference
-   event lands on the issue timeline.
-2. If yes: sketch the MCP tool surface (`chat_send`, `chat_dm`,
-   `chat_inbox`, `chat_join_room`, `chat_create_room`, `chat_history`,
-   `chat_list_rooms`).
-3. Pick a language (Python or Node) and build a minimal stateless MCP
-   server that wraps `gh api`.
-4. Add the `UserPromptSubmit` hook and status line.
-5. Two-person dogfood test.
+1. ~~Run `scripts/verify-notification.sh` and confirm the cross-reference
+   event lands on the issue timeline.~~ **PASSED** on 2026-04-15 — the
+   Contents API path generates cross-reference events within 2s.
+2. Scaffold the plugin layout above with working `chat-setup`,
+   `chat-send`, `chat-inbox`.
+3. Wire the `UserPromptSubmit` hook + status line.
+4. Two-person dogfood test (two machines, two GitHub accounts, one
+   shared backend repo).
