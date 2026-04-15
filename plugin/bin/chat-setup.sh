@@ -32,8 +32,38 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "$REPO" ]]; then
+  # No arguments → show current status if configured.
+  if [[ -f "$VW_CONFIG" ]]; then
+    vw_check_tools
+    vw_load_config
+    echo "vault-whisper status"
+    echo "  repo:    $VW_REPO"
+    echo "  user:    $VW_USER"
+    echo "  root:    $VW_ROOT"
+    echo "  config:  $VW_CONFIG"
+    echo
+    rooms=$(jq -r '.rooms | keys[]?' "$VW_CONFIG")
+    if [[ -z "$rooms" ]]; then
+      echo "Rooms: (none joined)"
+    else
+      echo "Rooms:"
+      while IFS= read -r room; do
+        issue=$(jq -r --arg r "$room" '.rooms[$r].issue' "$VW_CONFIG")
+        last_seen=$(jq -r --arg r "$room" '.rooms[$r].last_seen_commit // empty' "$VW_CONFIG")
+        if [[ -z "$last_seen" ]]; then
+          printf '  #%-12s  issue #%s   (no messages read yet)\n' "$room" "$issue"
+        else
+          printf '  #%-12s  issue #%s   last seen %s\n' "$room" "$issue" "${last_seen:0:7}"
+        fi
+      done <<< "$rooms"
+    fi
+    exit 0
+  fi
   cat >&2 <<EOF
-usage: /chat-setup <owner/repo>                    join an existing backend
+vault-whisper is not configured.
+
+usage: /chat-setup                                 show current status (when configured)
+       /chat-setup <owner/repo>                    join an existing backend
        /chat-setup <owner/repo> --init             create and initialize a new backend
        /chat-setup <owner/repo> --init --root DIR  use DIR as the chat root (default: chat)
 EOF
