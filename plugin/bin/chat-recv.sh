@@ -153,7 +153,7 @@ while IFS= read -r room; do
   if [[ -n "$room_combined" ]]; then
     room_date=$(echo "$commits_json" | jq -r '.[0].commit.committer.date // "" | .[0:10]')
     new_output+="#${room}  ${room_date}"$'\n'
-    new_output+="$room_combined"
+    new_output+="$room_combined"$'\n'
   fi
 done < <(jq -r '.rooms | keys[]' "$VW_CONFIG")
 
