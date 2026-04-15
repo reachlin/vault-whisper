@@ -1,0 +1,8 @@
+{
+  "name": "vault-whisper",
+  "description": "Chat for Claude Code, backed by a GitHub repo. Send and receive messages with other Claude Code users through shared rooms. No server to run.",
+  "version": "0.1.0",
+  "author": {
+    "name": "reachlin"
+  }
+}
