@@ -8,11 +8,50 @@
 
 source "$(dirname "$0")/_common.sh"
 
-MODE="${1:-read}"
+MODE="read"
+COLOR="auto"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --peek) MODE="peek"; shift ;;
+    --count) MODE="count"; shift ;;
+    --color) COLOR="always"; shift ;;
+    --no-color) COLOR="never"; shift ;;
+    -h|--help)
+      cat <<'EOF'
+chat-inbox.sh — fetch and print unread messages.
+
+  chat-inbox.sh                 Print unread messages, mark them read.
+  chat-inbox.sh --peek          Print unread without marking read.
+  chat-inbox.sh --count         Print unread count (for statusline).
+  chat-inbox.sh --color         Force ANSI color on message bodies.
+  chat-inbox.sh --no-color      Force colors off.
+
+Default color mode is auto (on when stdout is a TTY, else off).
+EOF
+      exit 0
+      ;;
+    *) echo "chat-inbox: unknown argument: $1" >&2; exit 1 ;;
+  esac
+done
 
 vw_check_tools
 vw_check_auth
 vw_load_config
+
+# Resolve auto → always/never based on whether stdout is a terminal.
+if [[ "$COLOR" == "auto" ]]; then
+  if [[ -t 1 ]]; then COLOR="always"; else COLOR="never"; fi
+fi
+
+if [[ "$COLOR" == "always" ]]; then
+  # Blue background, bright white foreground.
+  VW_BG=$'\033[44;97m'
+  VW_RESET=$'\033[0m'
+else
+  VW_BG=""
+  VW_RESET=""
+fi
 
 # For each room in config, list commits to its folder since last_seen_commit,
 # fetch the new files, print them, and advance last_seen_commit.
@@ -58,13 +97,13 @@ while IFS= read -r room; do
       from=$(echo "$content" | jq -r '.from // "?"')
       body=$(echo "$content" | jq -r '.body // ""')
       ts=$(echo "$content" | jq -r '.ts // ""')
-      output+="[$ts] #$room <$from> $body"$'\n'
+      output+="[$ts] #$room <$from> ${VW_BG}${body}${VW_RESET}"$'\n'
       total_unread=$((total_unread + 1))
     done <<< "$files"
   done <<< "$new_shas_ordered"
 
   # Advance last_seen in config (unless --peek or --count).
-  if [[ "$MODE" != "--peek" && "$MODE" != "--count" && -n "$latest_sha" ]]; then
+  if [[ "$MODE" == "read" && -n "$latest_sha" ]]; then
     vw_update_config ".rooms[\"$room\"].last_seen_commit = \"$latest_sha\""
   fi
 done < <(jq -r '.rooms | keys[]' "$VW_CONFIG")
@@ -78,7 +117,7 @@ if [[ "$MODE" == "read" && $total_unread -gt 0 ]]; then
       done
 fi
 
-if [[ "$MODE" == "--count" ]]; then
+if [[ "$MODE" == "count" ]]; then
   echo "$total_unread"
   exit 0
 fi
