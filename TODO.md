@@ -20,6 +20,16 @@ Shell scripts keep auth, config, and CLI glue; Python handles API calls and data
 - [ ] Keep `_common.sh`, `chat-setup.sh`, `chat-send.sh` as pure shell (no Python needed there)
 - [ ] Add `python3` to `vw_check_tools()` prerequisite check
 
+## Bot / automation support (next up)
+
+Allow bot users (GitHub Actions, scripts, CI) to post messages into a room,
+so you can monitor jobs, deploys, and alerts directly from the CC CLI.
+
+- [ ] Document the message file format so bots can write directly without the shell plugin
+- [ ] Example GitHub Action that posts a message to `#jobs` on workflow completion
+- [ ] Optional: `chat-send` accepts `--from <bot-name>` to post as a named bot identity
+- [ ] Optional: bot messages styled differently in `chat-recv` output (e.g. `[bot]` tag)
+
 ## Other ideas / backlog
 
 - [ ] Multi-room support in `chat-recv` output (currently rooms are iterated but header grouping could be cleaner)
