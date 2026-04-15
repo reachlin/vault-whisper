@@ -2,7 +2,7 @@
 # chat-inbox.sh — fetch and print unread messages across all joined rooms.
 #
 # Usage:
-#   chat-inbox.sh                 Print unread messages, mark them read.
+#   chat-inbox.sh [room] [n]      Print last n messages from room (defaults: all rooms, 3).
 #   chat-inbox.sh --peek          Print unread messages without marking read.
 #   chat-inbox.sh --count         Print just the unread count (for statusline).
 
@@ -10,6 +10,8 @@ source "$(dirname "$0")/_common.sh"
 
 MODE="read"
 COLOR="auto"
+FILTER_ROOM=""
+MIN_MESSAGES=3
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -21,7 +23,7 @@ while [[ $# -gt 0 ]]; do
       cat <<'EOF'
 chat-inbox.sh — fetch and print unread messages.
 
-  chat-inbox.sh                 Print unread messages, mark them read.
+  chat-inbox.sh [room] [n]      Show last n messages from room (defaults: all rooms, 3).
   chat-inbox.sh --peek          Print unread without marking read.
   chat-inbox.sh --count         Print unread count (for statusline).
   chat-inbox.sh --color         Force ANSI color on message bodies.
@@ -31,7 +33,18 @@ Default color mode is auto (on when stdout is a TTY, else off).
 EOF
       exit 0
       ;;
-    *) echo "chat-inbox: unknown argument: $1" >&2; exit 1 ;;
+    --) shift; break ;;
+    -*) echo "chat-inbox: unknown flag: $1" >&2; exit 1 ;;
+    *)
+      if [[ -z "$FILTER_ROOM" ]]; then
+        FILTER_ROOM=$(vw_room_slug "$1")
+      elif [[ "$1" =~ ^[0-9]+$ ]]; then
+        MIN_MESSAGES="$1"
+      else
+        echo "chat-inbox: unexpected argument: $1" >&2; exit 1
+      fi
+      shift
+      ;;
   esac
 done
 
@@ -85,8 +98,6 @@ vw_fetch_msgs() {
   echo -n "$_result"
 }
 
-MIN_MESSAGES=3
-
 # For each room in config, list commits to its folder since last_seen_commit,
 # fetch the new files, print them, and advance last_seen_commit.
 total_unread=0
@@ -95,6 +106,7 @@ total_shown=0
 
 while IFS= read -r room; do
   [[ -z "$room" ]] && continue
+  [[ -n "$FILTER_ROOM" && "$room" != "$FILTER_ROOM" ]] && continue
   folder=$(vw_room_folder "$room")
   last_seen=$(jq -r --arg r "$room" '.rooms[$r].last_seen_commit // empty' "$VW_CONFIG")
 
