@@ -1,6 +1,6 @@
 ---
 description: Send a chat message to a room
-argument-hint: <room> <message>
+argument-hint: [room] <message>
 ---
 
 Run the send script:
@@ -9,4 +9,4 @@ Run the send script:
 ~/.claude/plugins/vault-whisper/bin/chat-send.sh $ARGUMENTS
 ```
 
-The first argument is the room (e.g. `#general`). Everything after is the message body. On success the script prints `sent to #<room>`. Report any error from the script.
+The room is optional — if omitted (or if the first word isn't a joined room), the message goes to the default room (`#general`). On success the script prints `sent to #<room>`. Report any error from the script.

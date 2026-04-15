@@ -54,8 +54,9 @@ else
 fi
 
 # Helper: fetch messages from a list of SHAs (oldest-first) for a given room/folder.
-# Returns lines in the form: <prefix><date> <time> <from> <body>
+# Outputs formatted message lines. Also sets VW_LAST_DATE to the date of the last message.
 # Usage: room_msgs=$(vw_fetch_msgs "$shas" "$folder" "$room" "$prefix")
+VW_LAST_DATE=""
 vw_fetch_msgs() {
   local shas_ordered="$1" folder="$2" room="$3" prefix="$4"
   local _result=""
@@ -70,14 +71,14 @@ vw_fetch_msgs() {
       local content
       content=$(gh api "repos/$VW_REPO/contents/$f" --jq .content 2>/dev/null | base64 -d 2>/dev/null || true)
       [[ -z "$content" ]] && continue
-      local from body ts date time
+      local from body ts
       from=$(echo "$content" | jq -r '.from // "?"')
       body=$(echo "$content" | jq -r '.body // ""')
       ts=$(echo "$content" | jq -r '.ts // ""')
-      # Split ISO timestamp into date and time parts.
-      date="${ts%%T*}"
+      VW_LAST_DATE="${ts%%T*}"
+      local time
       time="${ts#*T}"; time="${time%%Z*}"
-      _result+="${prefix}${date} ${time} <$from> ${VW_BG}${body}${VW_RESET}"$'\n'
+      _result+="${prefix}${time} <$from> ${VW_BG}${body}${VW_RESET}"$'\n'
     done <<< "$files"
   done <<< "$shas_ordered"
   echo -n "$_result"
@@ -147,12 +148,11 @@ while IFS= read -r room; do
     total_shown=$((total_shown + old_count))
   fi
 
-  # Collect per-room output with a header line (room name + date from latest msg).
+  # Collect per-room output with a header line (room name + date).
   room_combined="${room_old}${room_new}"
   if [[ -n "$room_combined" ]]; then
-    # Extract the date from the last line of messages for the header.
-    last_date=$(echo "$room_combined" | grep -o '[0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}' | tail -1)
-    new_output+="#${room}  ${last_date}"$'\n'
+    room_date=$(echo "$commits_json" | jq -r '.[0].commit.committer.date // "" | .[0:10]')
+    new_output+="#${room}  ${room_date}"$'\n'
     new_output+="$room_combined"
   fi
 done < <(jq -r '.rooms | keys[]' "$VW_CONFIG")

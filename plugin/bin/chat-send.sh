@@ -9,12 +9,21 @@
 
 source "$(dirname "$0")/_common.sh"
 
-ROOM="${1:-}"
-shift || true
-MESSAGE="${*:-}"
+ROOM=""
+MESSAGE=""
 
-if [[ -z "$ROOM" || -z "$MESSAGE" ]]; then
-  echo "usage: chat-send.sh <room> <message...>" >&2
+# If the first argument starts with '#', it's a room name; otherwise the whole
+# input is the message and we default to the first joined room (#general).
+if [[ "${1:-}" == \#* ]]; then
+  ROOM="${1:-}"
+  shift || true
+  MESSAGE="${*:-}"
+else
+  MESSAGE="${*:-}"
+fi
+
+if [[ -z "$MESSAGE" ]]; then
+  echo "usage: chat-send.sh [#room] <message...>" >&2
   exit 1
 fi
 
@@ -22,14 +31,19 @@ vw_check_tools
 vw_check_auth
 vw_load_config
 
-SLUG=$(vw_room_slug "$ROOM")
-ISSUE=$(jq -r --arg s "$SLUG" '.rooms[$s].issue // empty' "$VW_CONFIG")
+if [[ -n "$ROOM" ]]; then
+  SLUG=$(vw_room_slug "$ROOM")
+else
+  SLUG=$(jq -r '.rooms | keys[0] // empty' "$VW_CONFIG")
+  if [[ -z "$SLUG" ]]; then
+    echo "vault-whisper: no rooms joined. Run /chat-setup first." >&2
+    exit 1
+  fi
+fi
 
+ISSUE=$(jq -r --arg s "$SLUG" '.rooms[$s].issue // empty' "$VW_CONFIG")
 if [[ -z "$ISSUE" ]]; then
-  cat >&2 <<EOF
-vault-whisper: room '$ROOM' not found in local config.
-  Join it first: /chat-join $ROOM
-EOF
+  echo "vault-whisper: room '#$SLUG' not joined. Run /chat-join $SLUG first." >&2
   exit 1
 fi
 
