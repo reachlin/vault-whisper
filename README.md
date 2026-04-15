@@ -11,10 +11,12 @@ and delivered through slash commands.
 ## Install
 
 ```bash
-git clone https://github.com/reachlin/vault-whisper ~/.claude/plugins/vault-whisper
+git clone https://github.com/reachlin/vault-whisper
+cd vault-whisper
+./scripts/install.sh
 ```
 
-**Requirements:** [Claude Code](https://claude.ai/code) · [GitHub CLI](https://cli.github.com/) (`gh auth login`)
+**Requirements:** [Claude Code](https://claude.ai/code) · [GitHub CLI](https://cli.github.com/) (`gh auth login`) · `jq`
 
 ---
 
