@@ -40,10 +40,28 @@ class MockSimulatorClient:
         return {"mood": mood}
 
 
+class MockLongTermMemory:
+    def __init__(self):
+        self.saved: list[dict] = []
+
+    def save(self, note, position=None, mood=None):
+        self.saved.append({"note": note, "position": position, "mood": mood})
+
+    def recent(self, n=10):
+        return [f"{e['mood'] or ''} · {e['note']}" for e in self.saved[-n:]]
+
+
 @pytest.fixture
 def mock_sim(monkeypatch):
     mock = MockSimulatorClient()
     monkeypatch.setattr(srv, "_sim", mock)
+    return mock
+
+
+@pytest.fixture
+def mock_mem(monkeypatch):
+    mock = MockLongTermMemory()
+    monkeypatch.setattr(srv, "_mem", mock)
     return mock
 
 
@@ -141,6 +159,64 @@ async def test_camera_frame_returns_error_when_no_frame(mock_sim):
         result = await client.call_tool("pet_camera_frame", {})
     data = json.loads(result.content[0].text)
     assert "error" in data
+
+
+# --- pet_remember ---
+
+@pytest.mark.asyncio
+async def test_remember_saves_note(mock_sim, mock_mem):
+    async with Client(mcp) as client:
+        await client.call_tool("pet_remember", {"note": "saw a human with glasses"})
+    assert any("saw a human with glasses" in e["note"] for e in mock_mem.saved)
+
+
+@pytest.mark.asyncio
+async def test_remember_saves_position_from_status(mock_sim, mock_mem):
+    async with Client(mcp) as client:
+        await client.call_tool("pet_remember", {"note": "test"})
+    assert mock_mem.saved[0]["position"] == (10, 7)
+
+
+@pytest.mark.asyncio
+async def test_remember_returns_saved_true(mock_sim, mock_mem):
+    async with Client(mcp) as client:
+        result = await client.call_tool("pet_remember", {"note": "test"})
+    assert _parse(result)["saved"] is True
+
+
+@pytest.mark.asyncio
+async def test_remember_accepts_optional_mood(mock_sim, mock_mem):
+    async with Client(mcp) as client:
+        await client.call_tool("pet_remember", {"note": "excited", "mood": "happy"})
+    assert mock_mem.saved[0]["mood"] == "happy"
+
+
+# --- pet_recall ---
+
+@pytest.mark.asyncio
+async def test_recall_returns_memories(mock_sim, mock_mem):
+    mock_mem.saved = [{"note": "old memory", "position": (5, 5), "mood": "happy"}]
+    async with Client(mcp) as client:
+        result = await client.call_tool("pet_recall", {})
+    data = _parse(result)
+    assert "memories" in data
+    assert data["count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_recall_empty_on_no_memories(mock_sim, mock_mem):
+    async with Client(mcp) as client:
+        result = await client.call_tool("pet_recall", {})
+    assert _parse(result)["count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_recall_respects_n_param(mock_sim, mock_mem):
+    for i in range(10):
+        mock_mem.saved.append({"note": f"note {i}", "position": (i, i), "mood": "neutral"})
+    async with Client(mcp) as client:
+        result = await client.call_tool("pet_recall", {"n": 3})
+    assert _parse(result)["count"] == 3
 
 
 # --- pet_set_mood ---

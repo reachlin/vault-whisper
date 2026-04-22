@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from fastmcp import FastMCP
 from fastmcp.utilities.types import Image
 from mcp_server.client import SimulatorClient
+from brain.longterm_memory import LongTermMemory
 
 SIMULATOR_URL = os.environ.get("SIMULATOR_URL", "http://localhost:18080")
 
@@ -20,6 +21,9 @@ mcp = FastMCP(
 )
 
 _sim = SimulatorClient(SIMULATOR_URL)
+
+_memory_file = Path(os.environ.get("PET_MEMORY_FILE", "data/memory.md"))
+_mem = LongTermMemory(_memory_file)
 
 
 @mcp.tool()
@@ -63,6 +67,34 @@ def pet_camera_frame() -> Image | dict:
     # frame is a data URL: "data:image/jpeg;base64,<data>"
     raw = frame.split(",", 1)[1] if "," in frame else frame
     return Image(data=base64.b64decode(raw), format="jpeg")
+
+
+@mcp.tool()
+def pet_remember(note: str, mood: str | None = None) -> dict:
+    """Save a note to Pepper's long-term memory (a markdown file).
+    Call this to record meaningful moments — people met, feelings, discoveries.
+    The memory persists across sessions and can be stored in GitHub or cloud.
+
+    Args:
+        note: What to remember — one or two sentences about this moment.
+        mood: Optional mood override; defaults to Pepper's current mood.
+    """
+    status = _sim.get_status()
+    position = (status["position"]["x"], status["position"]["y"])
+    _mem.save(note, position=position, mood=mood or status["mood"])
+    return {"saved": True, "note": note}
+
+
+@mcp.tool()
+def pet_recall(n: int = 10) -> dict:
+    """Read Pepper's recent long-term memories from the markdown file.
+    Call this at the start of each session to remember past interactions and context.
+
+    Args:
+        n: How many recent memories to retrieve (default 10).
+    """
+    entries = _mem.recent(n=n)
+    return {"memories": entries, "count": len(entries)}
 
 
 @mcp.tool()
