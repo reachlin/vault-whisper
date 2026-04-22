@@ -1,0 +1,40 @@
+services:
+  simulator:
+    build:
+      context: .
+      dockerfile: docker/simulator.Dockerfile
+    ports:
+      - "18080:18080"
+    volumes:
+      - pet_data:/app/data
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      - PET_MOCK_HARDWARE=true
+
+  brain:
+    build:
+      context: .
+      dockerfile: docker/brain.Dockerfile
+    depends_on:
+      - simulator
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      - SIMULATOR_URL=http://simulator:18080
+      - PET_PROVIDER=claude
+      - PET_HEARTBEAT_SECS=10
+
+  test:
+    build:
+      context: .
+      dockerfile: docker/test.Dockerfile
+    volumes:
+      - .:/app
+    environment:
+      - PET_MOCK_HARDWARE=true
+
+volumes:
+  pet_data:

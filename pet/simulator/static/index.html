@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>AI Pet Simulator</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0d1117;
+      color: #e6edf3;
+      font-family: 'Courier New', monospace;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+      gap: 16px;
+    }
+    h1 { font-size: 1.2rem; color: #58a6ff; letter-spacing: 2px; }
+    #layout {
+      display: flex;
+      gap: 20px;
+      align-items: flex-start;
+    }
+    #canvas-wrap {
+      position: relative;
+    }
+    canvas {
+      border: 1px solid #30363d;
+      display: block;
+    }
+    #hud {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 12px 16px;
+      min-width: 200px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      font-size: 0.82rem;
+    }
+    #hud h2 { color: #58a6ff; font-size: 0.85rem; margin-bottom: 4px; }
+    .hud-row { display: flex; justify-content: space-between; gap: 12px; }
+    .hud-val { color: #79c0ff; }
+    #camera-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      align-items: center;
+    }
+    video {
+      width: 160px;
+      height: 120px;
+      border: 1px solid #30363d;
+      border-radius: 4px;
+      background: #000;
+    }
+    #cam-status, #mic-status { font-size: 0.72rem; color: #8b949e; }
+    #mic-status.listening { color: #56d364; }
+    #controls {
+      font-size: 0.75rem;
+      color: #8b949e;
+      text-align: center;
+    }
+    #speech-display {
+      background: #161b22;
+      border: 1px solid #388bfd;
+      border-radius: 6px;
+      padding: 10px 16px;
+      width: 100%;
+      max-width: 700px;
+      min-height: 40px;
+      font-size: 0.95rem;
+      color: #56d364;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    #speech-display .label {
+      color: #388bfd;
+      font-size: 0.72rem;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    #speech-text {
+      flex: 1;
+      font-style: italic;
+      color: #56d364;
+      word-break: break-word;
+    }
+    #speech-text.empty { color: #30363d; font-style: normal; }
+    #log {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 8px 12px;
+      width: 100%;
+      max-width: 700px;
+      height: 80px;
+      overflow-y: auto;
+      font-size: 0.75rem;
+      color: #8b949e;
+    }
+    .log-entry { padding: 1px 0; }
+    .log-speak { color: #56d364; }
+    #speak-form {
+      display: flex;
+      gap: 8px;
+    }
+    #speak-input {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 4px;
+      color: #e6edf3;
+      padding: 4px 8px;
+      font-family: inherit;
+      font-size: 0.82rem;
+      width: 280px;
+    }
+    button {
+      background: #238636;
+      border: none;
+      border-radius: 4px;
+      color: #fff;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.82rem;
+      padding: 4px 12px;
+    }
+    button:hover { background: #2ea043; }
+  </style>
+</head>
+<body>
+  <h1>AI PET SIMULATOR</h1>
+
+  <div id="layout">
+    <div id="canvas-wrap">
+      <canvas id="grid"></canvas>
+      <div id="controls">arrow keys to move</div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:12px;">
+      <div id="hud">
+        <h2>PET STATUS</h2>
+        <div class="hud-row"><span>position</span><span class="hud-val" id="h-pos">—</span></div>
+        <div class="hud-row"><span>facing</span><span class="hud-val" id="h-facing">—</span></div>
+        <div class="hud-row"><span>mood</span><span class="hud-val" id="h-mood">—</span></div>
+        <div class="hud-row"><span>tick</span><span class="hud-val" id="h-tick">—</span></div>
+        <div class="hud-row"><span>ws</span><span class="hud-val" id="h-ws">connecting…</span></div>
+        <div class="hud-row"><span>heard</span><span class="hud-val" id="h-heard" style="font-style:italic;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">—</span></div>
+      </div>
+
+      <div id="camera-wrap">
+        <video id="cam" autoplay muted playsinline></video>
+        <div id="cam-status">camera off</div>
+        <button id="cam-btn">Enable Camera</button>
+      </div>
+
+      <div id="camera-wrap">
+        <div id="mic-status">mic off</div>
+        <button id="mic-btn">Enable Mic</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="speech-display">
+    <span class="label">PET SAYS</span>
+    <span id="speech-text" class="empty">—</span>
+  </div>
+
+  <div id="speak-form">
+    <input id="speak-input" type="text" placeholder="Type something for the pet to say…">
+    <button id="speak-btn">Speak</button>
+  </div>
+
+  <div id="log"></div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
