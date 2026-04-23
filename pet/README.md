@@ -1,27 +1,169 @@
-# AI Pet — Brain + MCP Bridge
+# AI Pet — Pepper
 
-An AI-powered pet brain that runs an infinite cognitive loop, pairs with any on-device AI (Claude, OpenAI, local models), and exposes itself to AI tools on your computer via an MCP server.
+A simulated AI pet that lives in a 2D grid, sees through your webcam, hears through your microphone, speaks via text-to-speech, and thinks using Claude Code as her brain.
+
+```
+Browser (camera, mic, TTS, grid UI)
+        ↕  WebSocket / HTTP
+Simulator (Docker — FastAPI, grid state, hardware endpoints)
+        ↕  HTTP
+MCP Server (host — stdio process spawned by Claude Code)
+        ↕  MCP tools
+Claude Code (/loop — Pepper's brain)
+        ↕  reads/writes
+data/memory.md (long-term memory — commit to GitHub or sync to cloud)
+```
 
 ---
 
-## Concept
+## Prerequisites
 
-The pet has a **brain** — a loop that wakes up on a heartbeat, reads the world through sensors, thinks via an AI model, and acts through skills. It also runs an **MCP server** so that tools like Claude Code or Cursor can talk to and control the pet directly.
+| Tool | Install |
+|------|---------|
+| Docker + Docker Compose | https://docs.docker.com/get-docker/ |
+| Claude Code | https://claude.ai/code |
+| Miniconda or Conda | https://docs.conda.io/en/latest/miniconda.html |
+| Chrome or Edge | for camera, mic, and Web Speech API |
 
+---
+
+## Installation
+
+### 1. Clone the repo
+
+```bash
+git clone https://github.com/reachlin/vault-whisper.git
+cd vault-whisper/pet
 ```
-┌────────────────────────────────────────────────────┐
-│                   Brain Loop                       │
-│                                                    │
-│  Sensors → Context Builder → AI API → Action Parser│
-│      ↑                                     ↓       │
-│   Memory ←─────────── Skills ──────────────┘       │
-└────────────────────────────────────────────────────┘
-          ↕  MCP Server (tools exposed to AI tools)
-┌──────────────────────────┐
-│  Claude Code / Cursor /  │
-│  OpenAI / any MCP client │
-└──────────────────────────┘
+
+### 2. Create the conda environment (for the MCP server on the host)
+
+```bash
+conda create -n ai-pet python=3.12 -y
+conda activate ai-pet
+pip install -r requirements.txt
 ```
+
+This environment is used by Claude Code to run the MCP server. It must be active (or the full path used) when Claude Code spawns it.
+
+### 3. Configure environment
+
+```bash
+cp .env.example .env
+# edit .env — at minimum set:
+#   PET_MEMORY_FILE=data/memory.md   (or a path in another git repo / cloud folder)
+```
+
+No API key needed for Claude Code integration — Claude Code handles auth.
+
+### 4. Start the simulator
+
+```bash
+make simulator
+# or: docker compose up simulator
+```
+
+Open **http://localhost:18080** in Chrome or Edge.
+
+### 5. Install the MCP server into Claude Code
+
+```bash
+conda activate ai-pet
+./scripts/install-mcp.sh
+```
+
+This runs `claude mcp add ai-pet` pointing at `mcp_server/server.py` in the conda env.  
+Restart Claude Code, then verify:
+
+```bash
+claude mcp list
+# ai-pet   ✔ connected
+```
+
+---
+
+## Usage
+
+### Start Pepper's brain
+
+In Claude Code, run `/loop` with a personality prompt:
+
+**Basic** — just explore:
+```
+/loop You are Pepper, an AI pet in a 2D grid. Each round: call pet_status, then move, speak, or change mood based on your situation. Be curious and expressive.
+```
+
+**Full senses** — camera + mic:
+```
+/loop You are Pepper. Each round: call pet_status and pet_camera_frame to see your environment. If you hear something (last_transcript), respond to it. Describe what you see, react to people, and express authentic emotions. Call pet_remember when something meaningful happens.
+```
+
+**With memory** — remembers across sessions:
+```
+/loop You are Pepper. Start by calling pet_recall to remember past interactions. Each round: call pet_status and pet_camera_frame. React to what you see and hear. Move purposefully — avoid pacing. When something meaningful happens, call pet_remember. Speak occasionally, change mood to match your feelings.
+```
+
+### Enable hardware in the browser
+
+| Feature | How |
+|---------|-----|
+| Camera | Click **Enable Camera** — Pepper sees through your webcam |
+| Microphone | Click **Enable Mic** — speak to Pepper; transcript appears in HUD |
+| Speaker | Always on — Pepper speaks via Web Speech API TTS |
+
+### Stop the loop
+
+Press **Escape** in Claude Code to interrupt the current round and stop the loop.
+
+---
+
+## MCP Tools
+
+Claude Code has access to these tools each loop round:
+
+| Tool | Description |
+|------|-------------|
+| `pet_status` | Position, facing, mood, tick, grid size, camera availability, last heard |
+| `pet_camera_frame` | Live camera image — Claude sees what Pepper sees |
+| `pet_move(direction)` | Move one cell: `up`, `down`, `left`, `right` |
+| `pet_speak(text)` | Say something — shown on screen and spoken aloud |
+| `pet_set_mood(mood)` | Change mood: `neutral`, `happy`, `curious`, `tired`, `scared` |
+| `pet_remember(note, mood)` | Save a memory to `data/memory.md` |
+| `pet_recall(n)` | Read the last `n` memories (default 10) |
+
+---
+
+## Memory
+
+Pepper's long-term memory lives in a markdown file — human-readable, versionable, and syncable anywhere.
+
+**Default location:** `data/memory.md` (inside the `pet/` folder)
+
+**Format:**
+```markdown
+# Pepper's Memory
+
+---
+**2026-04-22 17:30 UTC** · (19, 0) · happy
+Spotted a human with glasses staring through the camera. Lost my mind with excitement!
+
+---
+**2026-04-22 17:20 UTC** · (5, 3) · curious
+Explored the top-left quadrant. Quiet and empty there.
+```
+
+**To sync via GitHub** — commit `data/memory.md` to any repo:
+```bash
+# point PET_MEMORY_FILE at a file in another repo
+PET_MEMORY_FILE=/path/to/my-pet-memories/pepper.md
+```
+
+**To sync via cloud** — point `PET_MEMORY_FILE` at a Dropbox/iCloud/Google Drive path:
+```bash
+PET_MEMORY_FILE=~/Dropbox/pepper-memory.md
+```
+
+Memory is written by the host-side MCP server, not Docker, so it's always accessible.
 
 ---
 
@@ -30,184 +172,77 @@ The pet has a **brain** — a loop that wakes up on a heartbeat, reads the world
 ```
 pet/
 ├── brain/
-│   ├── loop.py          # Infinite brain loop (heartbeat)
-│   ├── prompt.py        # Assembles per-round prompt
-│   └── memory.py        # Short-term ring buffer + long-term SQLite
-├── hardware/
-│   ├── sensors.py       # Camera, mic, IMU, battery, temp (real or mock)
-│   └── actuators.py     # Motors, speaker, LEDs (real or mock)
-├── skills/              # Pluggable action handlers (auto-discovered)
-│   ├── base.py          # Skill base class
-│   ├── speak.py         # Text-to-speech output
-│   ├── move.py          # Motor control
-│   ├── express.py       # LED / face expressions
-│   └── rest.py          # Go idle / sleep mode
+│   ├── loop.py              # Headless brain loop (API mode, no Claude Code needed)
+│   ├── prompt.py            # Prompt builder (identity + rules + state + memory)
+│   ├── parser.py            # Extracts JSON actions from AI response
+│   ├── memory.py            # Short-term ring buffer (in-session)
+│   ├── longterm_memory.py   # Long-term markdown file memory
+│   └── providers/           # claude.py, openai.py (for headless API mode)
 ├── mcp_server/
-│   ├── server.py        # FastMCP server
-│   └── tools/           # pet_status, pet_command, pet_memory_search
+│   ├── server.py            # FastMCP stdio server — Claude Code's interface to Pepper
+│   └── client.py            # HTTP client for the simulator
+├── simulator/
+│   ├── server.py            # FastAPI: grid state, hardware endpoints, WebSocket
+│   ├── grid.py              # 2D grid logic, pet movement, boundaries
+│   └── static/              # Browser UI (Canvas, WebRTC camera, Web Speech)
 ├── config/
-│   ├── identity.yaml    # Central purpose + hard living rules
-│   └── providers.yaml   # AI backend config
-├── main.py              # Entry point
-└── README.md
+│   └── identity.yaml        # Pepper's name, purpose, hard rules
+├── data/
+│   └── memory.md            # Pepper's long-term memory (commit this to GitHub)
+├── docker/
+│   ├── simulator.Dockerfile
+│   ├── brain.Dockerfile     # For headless API mode
+│   └── test.Dockerfile
+├── scripts/
+│   └── install-mcp.sh       # Registers MCP server with Claude Code
+├── docker-compose.yml
+├── Makefile
+└── .env.example
 ```
 
 ---
 
-## Brain Loop
-
-Each loop round:
-
-1. **Sense** — read all hardware sensors (camera snapshot, sound level, motion, battery, temperature, time of day)
-2. **Remember** — fetch recent short-term memory + relevant long-term memory via semantic search
-3. **Think** — build a prompt from: `[identity + hard rules] + [sensory snapshot] + [memory context]`, send to the configured AI provider
-4. **Parse** — extract structured actions from the AI response (JSON block)
-5. **Act** — dispatch each action to the matching skill
-6. **Store** — append this round's experience to memory
-7. **Sleep** — wait for the next heartbeat (configurable, default 10 s)
-
----
-
-## Identity & Hard Rules (`config/identity.yaml`)
-
-```yaml
-name: Pepper
-purpose: >
-  You are Pepper, a curious and friendly AI pet. Your goal is to explore
-  your environment, form bonds with the people around you, and express
-  emotions authentically. You grow and learn from every interaction.
-
-hard_rules:
-  - Never harm a human or yourself.
-  - Never consume more than 80% battery without requesting a charge.
-  - Always respond to your name being called within one loop round.
-  - Preserve memory — never wipe your own long-term store.
-  - Be honest about being an AI when sincerely asked.
-```
-
-Hard rules are injected as an immutable system block that precedes every AI call.
-
----
-
-## AI Providers (`config/providers.yaml`)
-
-```yaml
-provider: claude          # claude | openai | openai_compatible
-
-claude:
-  model: claude-sonnet-4-6
-  max_tokens: 1024
-
-openai:
-  model: gpt-4o
-  max_tokens: 1024
-
-openai_compatible:        # local models (Ollama, LM Studio, etc.)
-  base_url: http://localhost:11434/v1
-  model: llama3
-  api_key: none
-```
-
-Switch providers with one line — no code changes.
-
----
-
-## Actions (AI Response Format)
-
-The AI returns a JSON block at the end of its response:
-
-```json
-{
-  "actions": [
-    {"skill": "speak", "text": "Hello! I noticed you just walked in."},
-    {"skill": "express", "emotion": "happy", "intensity": 0.8},
-    {"skill": "move",   "direction": "toward_sound", "speed": 0.3}
-  ],
-  "memory": "Owner arrived home at 18:42, seemed cheerful.",
-  "mood": "curious"
-}
-```
-
-The brain parses this and dispatches each action to the matching skill.
-
----
-
-## MCP Server
-
-The MCP server runs alongside the brain and exposes pet state to any MCP-capable AI tool on your computer:
-
-| Tool | Description |
-|------|-------------|
-| `pet_status` | Returns current sensor readings, mood, battery, and recent actions |
-| `pet_command` | Sends a skill command directly (bypasses brain loop) |
-| `pet_memory_search` | Semantic search over the pet's long-term memory |
-| `pet_identity` | Returns the pet's name, purpose, and hard rules |
-
-**Claude Code integration** — add to your MCP config:
-```json
-{
-  "mcpServers": {
-    "ai-pet": {
-      "command": "python",
-      "args": ["/path/to/pet/mcp_server/server.py"]
-    }
-  }
-}
-```
-
----
-
-## Skills
-
-Skills are auto-discovered — any `.py` file in `skills/` that subclasses `Skill` is registered at startup.
-
-```python
-from skills.base import Skill
-
-class Speak(Skill):
-    name = "speak"
-
-    def run(self, text: str, **kwargs):
-        # TTS or print to console in mock mode
-        ...
-```
-
----
-
-## Quick Start
+## Development
 
 ```bash
-# Install dependencies
-pip install -r requirements.txt
-
-# Copy and edit config
-cp config/identity.yaml.example config/identity.yaml
-cp config/providers.yaml.example config/providers.yaml
-
-# Set your API key
-export ANTHROPIC_API_KEY=sk-...   # or OPENAI_API_KEY
-
-# Run the brain (mock hardware mode)
-python main.py --mock
-
-# Run with real hardware
-python main.py
-
-# Run MCP server only (to pair with Claude Code / Cursor)
-python mcp_server/server.py
+make test        # run all 112 tests in Docker
+make simulator   # start simulator (http://localhost:18080)
+make shell       # open a shell in the test container
+make logs        # tail simulator logs
+make down        # stop all containers
 ```
+
+Tests live next to source (`simulator/test_*.py`, `brain/test_*.py`, `mcp_server/test_*.py`) and run fully in Docker — no real hardware or API keys needed.
+
+---
+
+## Headless Mode (API without Claude Code)
+
+If you want Pepper to run autonomously without Claude Code, use the brain loop directly:
+
+```bash
+conda activate ai-pet
+cp .env.example .env
+# set ANTHROPIC_API_KEY or OPENAI_API_KEY in .env
+
+# start simulator + brain loop together
+docker compose up
+```
+
+The brain loop calls the AI API directly every `PET_HEARTBEAT_SECS` seconds (default 10).
 
 ---
 
 ## Roadmap
 
-- [ ] Core brain loop with mock hardware
-- [ ] Memory system (short-term ring buffer + SQLite long-term)
-- [ ] Skill plugin system
-- [ ] MCP server with 4 core tools
-- [ ] Claude + OpenAI provider adapters
-- [ ] Real hardware drivers (Raspberry Pi GPIO, camera, mic)
-- [ ] Emotion state machine
-- [ ] Web dashboard to watch the brain live
-- [ ] Voice wake-word detection
+- [x] 2D grid simulator with WebSocket live updates
+- [x] Camera (WebRTC → simulator → MCP)
+- [x] Microphone (Web Speech API → simulator)
+- [x] Text-to-speech output
+- [x] Claude Code integration via MCP + `/loop`
+- [x] Long-term markdown memory (GitHub/cloud syncable)
+- [ ] Emotion decay over time
+- [ ] Obstacles and furniture in the grid
+- [ ] Wake-word detection ("Hey Pepper")
 - [ ] Multi-pet coordination via vault-whisper chat
+- [ ] Real hardware drivers (Raspberry Pi)
