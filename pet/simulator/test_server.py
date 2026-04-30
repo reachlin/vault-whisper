@@ -10,6 +10,7 @@ def reset_state():
     srv.grid = Grid()
     srv.last_frame = None
     srv.last_transcript = None
+    srv.pet_activity = "idle"
     srv.connections.clear()
 
 

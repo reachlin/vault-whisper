@@ -1,5 +1,8 @@
+import asyncio
+from unittest.mock import AsyncMock, patch
+
 import pytest
-from brain.loop import BrainLoop
+from brain.loop import AgentLoop, BrainLoop
 from brain.prompt import PromptBuilder, PetIdentity
 from brain.memory import ShortTermMemory
 from brain.providers.base import Provider
@@ -32,6 +35,7 @@ class MockSimulatorClient:
     async def set_mood(self, mood: str): self.moods.append(mood)
     async def get_last_frame(self): return None
     async def get_last_transcript(self): return None
+    async def set_activity(self, activity: str): pass
 
 
 def make_loop(provider_response=None):
@@ -122,3 +126,105 @@ async def test_tick_handles_no_json_in_response():
     await loop.tick()
     assert sim.moves == []
     assert sim.speeches == []
+
+
+# --- AgentLoop browse tests ---
+
+def make_agent_loop():
+    from pathlib import Path
+    import tempfile
+    tmp = Path(tempfile.mkdtemp()) / "memory.md"
+    sim = MockSimulatorClient()
+    return AgentLoop(
+        provider="openai",
+        model="gpt-4o",
+        simulator=sim,
+        system_prompt="You are Pepper.",
+        memory_file=tmp,
+        heartbeat=0,
+    ), sim
+
+
+@pytest.mark.asyncio
+async def test_browse_returns_content():
+    loop, _ = make_agent_loop()
+    fake_proc = AsyncMock()
+    fake_proc.communicate = AsyncMock(return_value=(b"Hello from the web!", b""))
+    with patch("asyncio.create_subprocess_exec", return_value=fake_proc):
+        result = await loop._browse("http://example.com")
+    assert result["url"] == "http://example.com"
+    assert "Hello from the web!" in result["content"]
+    assert result["truncated"] is False
+
+
+@pytest.mark.asyncio
+async def test_browse_truncates_long_content():
+    loop, _ = make_agent_loop()
+    long_text = b"x" * 5000
+    fake_proc = AsyncMock()
+    fake_proc.communicate = AsyncMock(return_value=(long_text, b""))
+    with patch("asyncio.create_subprocess_exec", return_value=fake_proc):
+        result = await loop._browse("http://example.com")
+    assert len(result["content"]) == 3000
+    assert result["truncated"] is True
+
+
+@pytest.mark.asyncio
+async def test_browse_records_action():
+    loop, _ = make_agent_loop()
+    fake_proc = AsyncMock()
+    fake_proc.communicate = AsyncMock(return_value=(b"content", b""))
+    with patch("asyncio.create_subprocess_exec", return_value=fake_proc):
+        await loop._browse("http://example.com")
+    assert any("browsed" in a for a in loop._cur_actions)
+
+
+@pytest.mark.asyncio
+async def test_browse_blocks_js_heavy_domains():
+    loop, _ = make_agent_loop()
+    for url in ["https://marketwatch.com/q", "https://www.bloomberg.com/q", "https://finance.yahoo.com/quote/INTC"]:
+        result = await loop._browse(url)
+        assert "error" in result
+        assert "search()" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_search_returns_results():
+    loop, _ = make_agent_loop()
+    fake_proc = AsyncMock()
+    fake_proc.communicate = AsyncMock(return_value=(b"1. Result one\n2. Result two", b""))
+    with patch("asyncio.create_subprocess_exec", return_value=fake_proc):
+        result = await loop._search("INTC stock price")
+    assert result["query"] == "INTC stock price"
+    assert "Result one" in result["results"]
+
+
+@pytest.mark.asyncio
+async def test_search_records_action():
+    loop, _ = make_agent_loop()
+    fake_proc = AsyncMock()
+    fake_proc.communicate = AsyncMock(return_value=(b"results", b""))
+    with patch("asyncio.create_subprocess_exec", return_value=fake_proc):
+        await loop._search("test query")
+    assert any("searched" in a for a in loop._cur_actions)
+
+
+@pytest.mark.asyncio
+async def test_stock_price_returns_data():
+    loop, _ = make_agent_loop()
+    fake_response = AsyncMock()
+    fake_response.json = lambda: {
+        "chart": {"result": [{"meta": {
+            "regularMarketPrice": 87.94,
+            "chartPreviousClose": 84.55,
+            "regularMarketDayHigh": 88.14,
+            "regularMarketDayLow": 86.11,
+            "regularMarketVolume": 14000000,
+            "currency": "USD",
+        }}]}
+    }
+    with patch.object(loop._http, "get", return_value=fake_response):
+        result = await loop._stock_price("INTC")
+    assert result["ticker"] == "INTC"
+    assert result["price"] == 87.94
+    assert result["currency"] == "USD"

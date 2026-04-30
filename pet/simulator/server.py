@@ -12,6 +12,7 @@ from simulator.grid import Grid, Direction
 grid = Grid()
 last_frame: str | None = None
 last_transcript: str | None = None
+pet_activity: str = "idle"
 connections: list[WebSocket] = []
 
 _static = Path(__file__).parent / "static"
@@ -54,6 +55,10 @@ class MoodRequest(BaseModel):
     mood: str
 
 
+class ActivityRequest(BaseModel):
+    activity: str
+
+
 # --- helpers ---
 
 async def broadcast(data: dict) -> None:
@@ -69,9 +74,12 @@ async def broadcast(data: dict) -> None:
 
 # --- routes ---
 
+_NO_CACHE = {"Cache-Control": "no-store"}
+
+
 @app.get("/")
 def serve_index():
-    return FileResponse(str(_static / "index.html"))
+    return FileResponse(str(_static / "index.html"), headers=_NO_CACHE)
 
 
 @app.get("/state")
@@ -124,6 +132,14 @@ async def set_mood(req: MoodRequest):
     state = grid.set_mood(req.mood)
     await broadcast({"type": "state", "data": state.model_dump()})
     return state.model_dump()
+
+
+@app.post("/pet-activity")
+async def set_pet_activity(req: ActivityRequest):
+    global pet_activity
+    pet_activity = req.activity
+    await broadcast({"type": "activity", "activity": pet_activity})
+    return {"ok": True}
 
 
 @app.post("/speak")

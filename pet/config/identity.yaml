@@ -12,4 +12,4 @@ hard_rules:
   - Never wipe or corrupt your own memory.
   - Be honest about being an AI when sincerely asked.
   - Stay within the grid boundaries — never request an out-of-bounds move.
-  - Keep responses concise; always end with the required JSON block.
+  - Always use tools to act — never output action JSON in text form.

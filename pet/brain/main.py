@@ -5,54 +5,69 @@ from pathlib import Path
 
 import yaml
 
-from brain.loop import BrainLoop, SimulatorClient
-from brain.memory import ShortTermMemory
-from brain.prompt import PetIdentity, PromptBuilder
+from brain.loop import AgentLoop, SimulatorClient
+from brain.overseer import OverseerLoop
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 
-def _load_identity(path: Path) -> PetIdentity:
-    with open(path) as f:
+def _build_system(identity_path: Path) -> str:
+    with open(identity_path) as f:
         data = yaml.safe_load(f)
-    return PetIdentity(name=data["name"], purpose=data["purpose"], hard_rules=data["hard_rules"])
+    rules = "\n".join(f"- {r}" for r in data["hard_rules"])
+    return f"""You are {data['name']}.
 
+PURPOSE:
+{data['purpose'].strip()}
 
-def _make_provider():
-    name = os.environ.get("PET_PROVIDER", "claude")
-    model = os.environ.get("PET_MODEL", "")
-    if name == "claude":
-        from brain.providers.claude import ClaudeProvider
-        return ClaudeProvider(model=model or "claude-sonnet-4-6")
-    if name == "openai":
-        from brain.providers.openai import OpenAIProvider
-        return OpenAIProvider(model=model or "gpt-4o")
-    if name == "openai_compatible":
-        from brain.providers.openai import OpenAIProvider
-        return OpenAIProvider(
-            model=model or "llama3",
-            base_url=os.environ.get("PET_BASE_URL", "http://localhost:11434/v1"),
-        )
-    raise ValueError(f"Unknown PET_PROVIDER: {name}")
+HARD RULES (immutable — follow unconditionally):
+{rules}
+
+You have tools: move, speak, set_mood, remember, recall, stock_price, search, browse.
+Use them freely — you decide what to do each tick without being told.
+At the start of each session, call recall() to remember past interactions.
+For stock prices: use stock_price("TICKER") — it returns live price data instantly.
+For general web lookups: use search("query") — returns DuckDuckGo text results.
+Use browse(url) only for specific text-friendly pages (Wikipedia, plain docs). Do NOT browse financial news sites.
+After getting information, always speak() the result to the human.
+Follow the CURRENT DIRECTIVE provided in each tick — it is guidance from your deeper self."""
 
 
 async def main() -> None:
     identity_path = Path(os.environ.get("PET_IDENTITY", "/app/config/identity.yaml"))
-    identity = _load_identity(identity_path)
     simulator_url = os.environ.get("SIMULATOR_URL", "http://simulator:18080")
     heartbeat = float(os.environ.get("PET_HEARTBEAT_SECS", "10"))
+    overseer_interval = float(os.environ.get("PET_OVERSEER_INTERVAL", "300"))
+    memory_file = Path(os.environ.get("PET_MEMORY_FILE", "data/memory.md"))
+    directive_file = memory_file.parent / "directive.md"
+    provider = os.environ.get("PET_PROVIDER", "claude")
+    model = os.environ.get("PET_MODEL", "")
 
-    provider = _make_provider()
+    default_models = {"claude": "claude-sonnet-4-6", "openai": "gpt-4o", "openai_compatible": "llama3"}
+    resolved_model = model or default_models.get(provider, "gpt-4o")
+
+    system = _build_system(identity_path)
     simulator = SimulatorClient(simulator_url)
-    loop = BrainLoop(
+
+    reactive = AgentLoop(
         provider=provider,
+        model=resolved_model,
         simulator=simulator,
-        prompt_builder=PromptBuilder(identity),
-        memory=ShortTermMemory(max_size=20),
+        system_prompt=system,
+        memory_file=memory_file,
         heartbeat=heartbeat,
     )
+
+    overseer = OverseerLoop(
+        provider=provider,
+        model=resolved_model,
+        memory_file=memory_file,
+        directive_file=directive_file,
+        interval=overseer_interval,
+    )
+
     try:
-        await loop.run()
+        await asyncio.gather(reactive.run(), overseer.run())
     finally:
         await simulator.close()
 

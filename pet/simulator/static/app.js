@@ -19,12 +19,97 @@ const speakInput = document.getElementById('speak-input');
 const speakBtn   = document.getElementById('speak-btn');
 const log     = document.getElementById('log');
 
-let state = null;
-let ws    = null;
-let camStream = null;
-let frameTimer = null;
+let state       = null;
+let ws          = null;
+let camStream   = null;
+let frameTimer  = null;
+let petActivity = 'idle';
+let animTick    = 0;
+
+const ACTIVITY_COLORS = {
+  idle:     '#555',
+  thinking: '#79c0ff',
+  received: '#ffd33d',
+  browsing: '#56d364',
+  talking:  '#56d364',
+  moving:   '#f5a623',
+};
 
 // --- rendering ---
+
+function drawActivityRing(cx, cy, r) {
+  const outerR = r * 1.7;
+  const t = animTick;
+  ctx.save();
+  switch (petActivity) {
+    case 'idle': {
+      const alpha = 0.12 + 0.08 * Math.sin(t * 0.025);
+      ctx.strokeStyle = `rgba(120,120,120,${alpha})`;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(cx, cy, outerR, 0, Math.PI * 2);
+      ctx.stroke();
+      break;
+    }
+    case 'thinking': {
+      const a = (t * 0.05) % (Math.PI * 2);
+      ctx.strokeStyle = '#79c0ff';
+      ctx.lineWidth = 2.5;
+      ctx.shadowColor = '#79c0ff';
+      ctx.shadowBlur = 10;
+      ctx.beginPath();
+      ctx.arc(cx, cy, outerR, a, a + Math.PI * 1.2);
+      ctx.stroke();
+      break;
+    }
+    case 'received': {
+      const alpha = 0.5 + 0.5 * Math.sin(t * 0.18);
+      ctx.strokeStyle = `rgba(255,211,61,${alpha})`;
+      ctx.lineWidth = 3;
+      ctx.shadowColor = '#ffd33d';
+      ctx.shadowBlur = 14;
+      ctx.beginPath();
+      ctx.arc(cx, cy, outerR, 0, Math.PI * 2);
+      ctx.stroke();
+      break;
+    }
+    case 'browsing': {
+      const a = (t * 0.07) % (Math.PI * 2);
+      ctx.strokeStyle = '#56d364';
+      ctx.lineWidth = 2.5;
+      ctx.shadowColor = '#56d364';
+      ctx.shadowBlur = 10;
+      ctx.beginPath();
+      ctx.arc(cx, cy, outerR, a, a + Math.PI * 1.5);
+      ctx.stroke();
+      break;
+    }
+    case 'talking': {
+      for (let i = 0; i < 3; i++) {
+        const phase = ((t * 0.04) + i * 0.9) % 3;
+        const alpha = Math.max(0, (1 - phase / 3) * 0.7);
+        ctx.strokeStyle = `rgba(86,211,100,${alpha})`;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(cx, cy, outerR + phase * 9, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      break;
+    }
+    case 'moving': {
+      const a = (t * 0.14) % (Math.PI * 2);
+      ctx.strokeStyle = '#f5a623';
+      ctx.lineWidth = 2.5;
+      ctx.shadowColor = '#f5a623';
+      ctx.shadowBlur = 8;
+      ctx.beginPath();
+      ctx.arc(cx, cy, outerR, a, a + Math.PI * 0.7);
+      ctx.stroke();
+      break;
+    }
+  }
+  ctx.restore();
+}
 
 function render(s) {
   const { config, pet } = s;
@@ -51,11 +136,13 @@ function render(s) {
     ctx.stroke();
   }
 
-  // pet body
   const cx = (pet.x + 0.5) * CELL;
   const cy = (pet.y + 0.5) * CELL;
   const r  = CELL * 0.36;
 
+  drawActivityRing(cx, cy, r);
+
+  // pet body
   ctx.fillStyle = MOOD_COLORS[pet.mood] ?? MOOD_COLORS.neutral;
   ctx.shadowColor = ctx.fillStyle;
   ctx.shadowBlur  = 10;
@@ -73,6 +160,13 @@ function render(s) {
   ctx.arc(dx, dy, r * 0.22, 0, Math.PI * 2);
   ctx.fill();
 }
+
+function rafLoop() {
+  animTick++;
+  if (state) render(state);
+  requestAnimationFrame(rafLoop);
+}
+requestAnimationFrame(rafLoop);
 
 function updateHUD(s) {
   document.getElementById('h-pos').textContent    = `(${s.pet.x}, ${s.pet.y})`;
@@ -95,7 +189,6 @@ function connect() {
     const msg = JSON.parse(e.data);
     if (msg.type === 'state') {
       state = msg.data;
-      render(state);
       updateHUD(state);
     } else if (msg.type === 'speak') {
       utter(msg.text);
@@ -104,6 +197,11 @@ function connect() {
     } else if (msg.type === 'transcript') {
       document.getElementById('h-heard').textContent = msg.text;
       addLog(`you said: "${msg.text}"`);
+    } else if (msg.type === 'activity') {
+      petActivity = msg.activity;
+      const el = document.getElementById('h-activity');
+      el.textContent = msg.activity;
+      el.style.color = ACTIVITY_COLORS[msg.activity] ?? '#e6edf3';
     }
   };
 
@@ -140,7 +238,7 @@ function utter(text) {
 speakBtn.addEventListener('click', async () => {
   const text = speakInput.value.trim();
   if (!text) return;
-  await fetch('/speak', {
+  await fetch('/hardware/transcript', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ text }),
