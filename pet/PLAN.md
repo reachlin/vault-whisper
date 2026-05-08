@@ -69,7 +69,7 @@
 - [x] Activity ring: 6 animated states (idle, thinking, received, browsing, talking, moving)
 - [x] Speech screen on button press
 
-### Next — Speaker (needs hardware: Hat SPK2, ~$5)
+### Done — Speaker (Hat SPK2)
 
 **Buy:** [M5Stack Hat SPK2 (MAX98357)](https://shop.m5stack.com/products/m5stickcplus-speaker-2-hat-max98357)
 — stacks directly on StickC Plus HAT port, I2S DAC, 1W speaker
