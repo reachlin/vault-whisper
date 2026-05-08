@@ -68,23 +68,26 @@
 - [x] BLE bridge (`ble_bridge/bridge.py`) — simulator WebSocket → M5Stack display
 - [x] Activity ring: 6 animated states (idle, thinking, received, browsing, talking, moving)
 - [x] Speech screen on button press
+- [x] Hat SPK2 speaker — BLE PCM audio streaming, macOS TTS + OpenAI TTS fallback
+- [x] Pip-Boy 3000 face aesthetic — phosphor green, CRT scan lines, block-pixel eyes/mouth
+- [x] Robco terminal sleep screen — shown when BLE disconnects; speaker silenced via `i2s_zero_dma_buffer`
+- [x] Browser mute button — silences computer TTS when M5Stack speaker is active
 
 ### Done — Speaker (Hat SPK2)
 
-**Buy:** [M5Stack Hat SPK2 (MAX98357)](https://shop.m5stack.com/products/m5stickcplus-speaker-2-hat-max98357)
-— stacks directly on StickC Plus HAT port, I2S DAC, 1W speaker
+**Hardware:** M5Stack Hat SPK2 (MAX98357 I2S DAC), stacked on StickC Plus HAT port
+- BCLK=GPIO26, LRCLK=GPIO0, DIN=GPIO25 — 8kHz 16-bit left-channel I2S
 
-**Integration plan:**
-1. Add I2S audio playback to `m5stack/src/main.cpp` using M5Unified I2S DMA
-2. Add BLE command for audio: bridge sends raw WAV/PCM chunks over NUS (chunked to MTU)
-3. On host: when simulator broadcasts a `speak` event, run TTS (e.g. `piper` or macOS `say`)
-   and stream the audio bytes to M5Stack over BLE
-4. M5Stack buffers and plays audio while face ring shows `talking` animation
+**BLE audio protocol:** binary frames on NUS RX channel
+- `0xAA + uint16_le_size + uint8_pcm_data` — audio frame
+- `0xAA + 0x00 0x00` — end-of-audio sentinel (silences DMA buffer)
+- Paced at 85% of playback rate so DMA buffer stays full
 
-**TTS options (host-side):**
-- `say -v Samantha -o out.aiff "..."` then convert to PCM (macOS, zero install)
-- `piper` — fast local neural TTS, runs offline, good quality
-- Anthropic/OpenAI TTS API — highest quality, needs network
+**TTS pipeline (macOS):**
+- `say -v Samantha` → AIFF → `afconvert -d LEI16@8000 -q 127` → Python 8-bit packing
+- 3× volume boost applied before streaming
+- OpenAI `tts-1-hd` with voice `alloy` also implemented (set `OPENAI_API_KEY` to activate)
+  — confirmed to fit Pip-Boy aesthetic; disabled by default to save tokens
 
 ### Next — Camera / Eyes (needs hardware: Unit CamS3, ~$15–25)
 

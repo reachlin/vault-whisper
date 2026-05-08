@@ -14,11 +14,22 @@ MESSAGE=""
 
 # If the first argument starts with '#', it's a room name; otherwise the whole
 # input is the message and we default to the first joined room (#general).
+# A bare word (no '#') is also treated as a room if it matches a joined room slug.
 if [[ "${1:-}" == \#* ]]; then
   ROOM="${1:-}"
   shift || true
   MESSAGE="${*:-}"
 else
+  # Peek at config to see if the first arg is a joined room slug.
+  if [[ -n "${1:-}" && -f "${XDG_CONFIG_HOME:-$HOME/.config}/vault-whisper/config.json" ]]; then
+    _slug=$(printf '%s' "${1:-}" | tr '[:upper:] ' '[:lower:]-' | tr -cd 'a-z0-9-')
+    _joined=$(jq -r --arg s "$_slug" '.rooms[$s] // empty' \
+      "${XDG_CONFIG_HOME:-$HOME/.config}/vault-whisper/config.json")
+    if [[ -n "$_joined" ]]; then
+      ROOM="#${_slug}"
+      shift || true
+    fi
+  fi
   MESSAGE="${*:-}"
 fi
 
