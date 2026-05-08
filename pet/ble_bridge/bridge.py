@@ -79,6 +79,17 @@ async def ble_write_json(client: BleakClient, payload: dict) -> None:
 
 # ── TTS + audio streaming ─────────────────────────────────────────────────────
 
+VOLUME_BOOST = float(os.getenv("VOLUME_BOOST", "3.0"))  # 1.0 = unity, 3.0 = 3× gain
+
+
+def _boost(pcm: bytes) -> bytes:
+    """Amplify unsigned 8-bit PCM in-place. Clips at 0/255 to avoid wrap-around."""
+    return bytes(
+        max(0, min(255, int((b - 128) * VOLUME_BOOST) + 128))
+        for b in pcm
+    )
+
+
 def _tts_to_pcm(text: str) -> bytes:
     """Generate 8 kHz 8-bit unsigned mono PCM from text using macOS say/afconvert."""
     with tempfile.TemporaryDirectory() as tmp:
@@ -93,7 +104,7 @@ def _tts_to_pcm(text: str) -> bytes:
             check=True, capture_output=True,
         )
         with wave.open(wav, "rb") as wf:
-            return wf.readframes(wf.getnframes())
+            return _boost(wf.readframes(wf.getnframes()))
 
 
 async def stream_audio(client: BleakClient, text: str) -> None:
