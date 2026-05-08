@@ -239,6 +239,81 @@ static void drawSpeechScreen() {
     spr.pushSprite(0, 0);
 }
 
+// ── Sleep screen (BLE disconnected) ──────────────────────────────────────────
+// Fallout Robco terminal aesthetic: dim phosphor green, floating ZZZs,
+// blinking "SIGNAL: NULL_" cursor.
+
+static void drawZ(int x, int y, int sz, uint16_t col) {
+    // Draw a pixel-art Z of given size
+    spr.fillRect(x,          y,          sz, 2, col);   // top bar
+    spr.fillRect(x + sz - 2, y + 2,      2,  sz - 4, col); // right diagonal hint
+    spr.fillRect(x,          y + sz - 2, sz, 2, col);   // bottom bar
+    // diagonal: draw a few pixels
+    int steps = sz - 2;
+    for (int i = 0; i < steps; i++)
+        spr.drawPixel(x + sz - 2 - i * sz / steps, y + 2 + i, col);
+}
+
+static void drawSleepScreen(uint32_t t) {
+    spr.fillSprite(TFT_BLACK);
+
+    // ── Robco terminal header ────────────────────────────────────────────────
+    spr.setTextFont(1);
+    spr.setTextColor(PIP_DIM, TFT_BLACK);
+    spr.setTextDatum(TC_DATUM);
+    spr.drawString("ROBCO INDUSTRIES (TM)", CX, 6);
+    spr.drawString("UNIFIED OPERATING SYSTEM", CX, 16);
+    spr.drawFastHLine(4, 27, W - 8, PIP_DIM);
+
+    // ── Sleeping pip-boy face ────────────────────────────────────────────────
+    const int FCY = 110;
+    spr.fillCircle(CX, FCY, FACE_R, PIP_BG);
+    // scan lines
+    for (int y = FCY - FACE_R + 2; y < FCY + FACE_R; y += 4) {
+        int dx = (int)sqrtf((float)(FACE_R * FACE_R - (y - FCY) * (y - FCY)));
+        spr.drawFastHLine(CX - dx, y, 2 * dx, PIP_DIM);
+    }
+    spr.drawCircle(CX, FCY, FACE_R, PIP_DIM);
+
+    // Closed eyes: thin arched lines
+    spr.fillRect(CX - 20, FCY - 12, 14, 3, PIP_MED);
+    spr.fillRect(CX + 6,  FCY - 12, 14, 3, PIP_MED);
+    // droopy inner corners
+    spr.fillRect(CX - 8,  FCY - 10, 3, 3, PIP_MED);
+    spr.fillRect(CX + 6,  FCY - 10, 3, 3, PIP_MED);
+
+    // Flat sleepy mouth
+    spr.fillRect(CX - 10, FCY + 12, 20, 2, PIP_DIM);
+
+    // ── Floating ZZZs (three sizes, rising loop every 3 s) ──────────────────
+    // Each Z rises 30px over 3 s then resets; they're offset in time.
+    const uint32_t PERIOD = 3000;
+    auto zY = [&](uint32_t offset) -> int {
+        uint32_t phase = (t + offset) % PERIOD;
+        return FCY - FACE_R - 6 - (int)(phase * 28 / PERIOD);
+    };
+    uint8_t zAlpha = 255 - (uint8_t)((t % PERIOD) * 180 / PERIOD);
+    // draw three Zs: large, medium, small, staggered
+    drawZ(CX + 20, zY(0),       10, PIP_BRIGHT);
+    drawZ(CX + 32, zY(1000) - 8, 7, PIP_MED);
+    drawZ(CX + 41, zY(2000) - 14, 5, PIP_DIM);
+
+    // ── Terminal status at bottom ────────────────────────────────────────────
+    spr.setTextFont(1);
+    spr.setTextColor(PIP_MED, TFT_BLACK);
+    spr.setTextDatum(TL_DATUM);
+    spr.drawString("> SIGNAL: NULL", 6, H - 34);
+
+    // Blinking cursor
+    if ((t / 500) % 2 == 0)
+        spr.fillRect(6 + 90, H - 34, 6, 8, PIP_MED);
+
+    spr.setTextColor(PIP_DIM, TFT_BLACK);
+    spr.drawString("> STANDBY MODE...", 6, H - 22);
+
+    spr.pushSprite(0, 0);
+}
+
 // ── BLE receive — state machine ───────────────────────────────────────────────
 // '{' ... '\n'                  → JSON display/state update
 // 0xAA + uint16_le + uint8[]   → PCM audio chunk (8 kHz, 8-bit unsigned)
@@ -322,6 +397,29 @@ void setup() {
 void loop() {
     M5.update();
     uint32_t t = millis();
+
+    // ── BLE connect / disconnect transitions ─────────────────────────────────
+    static bool wasConnected = false;
+    bool connected = bleConnected();
+
+    if (connected && !wasConnected) {
+        // just reconnected — restore brightness and reset state
+        M5.Axp.ScreenBreath(80);
+        strlcpy(g_activity, "idle",    sizeof(g_activity));
+        strlcpy(g_mood,     "neutral", sizeof(g_mood));
+        uiMode = MODE_FACE;
+    } else if (!connected && wasConnected) {
+        // just disconnected — dim screen and silence speaker
+        M5.Axp.ScreenBreath(20);
+        i2s_zero_dma_buffer(I2S_PORT);
+    }
+    wasConnected = connected;
+
+    if (!connected) {
+        drawSleepScreen(t);
+        delay(40);
+        return;
+    }
 
     pollBle();
 
