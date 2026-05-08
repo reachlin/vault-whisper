@@ -148,9 +148,6 @@ def _openai_tts_to_pcm(text: str) -> bytes:
 
 
 def _tts_to_pcm(text: str) -> bytes:
-    if _OPENAI_API_KEY:
-        log.info("TTS: OpenAI %s", OPENAI_TTS_VOICE)
-        return _openai_tts_to_pcm(text)
     log.info("TTS: macOS say (%s)", SAY_VOICE)
     return _macos_tts_to_pcm(text)
 
