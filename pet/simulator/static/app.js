@@ -229,8 +229,19 @@ document.addEventListener('keydown', async (e) => {
 
 // --- TTS ---
 
+let speakerMuted = false;
+const muteBtn    = document.getElementById('mute-btn');
+const muteStatus = document.getElementById('mute-status');
+
+muteBtn.addEventListener('click', () => {
+  speakerMuted = !speakerMuted;
+  muteStatus.textContent = speakerMuted ? 'speaker off' : 'speaker on';
+  muteBtn.textContent    = speakerMuted ? 'Unmute Speaker' : 'Mute Speaker';
+  if (speakerMuted) speechSynthesis.cancel();
+});
+
 function utter(text) {
-  if (!window.speechSynthesis) return;
+  if (speakerMuted || !window.speechSynthesis) return;
   const u = new SpeechSynthesisUtterance(text);
   speechSynthesis.speak(u);
 }
