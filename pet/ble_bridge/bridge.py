@@ -46,7 +46,7 @@ log = logging.getLogger(__name__)
 
 SIMULATOR_WS      = os.getenv("SIMULATOR_WS", "ws://localhost:18080/ws")
 SAY_VOICE         = os.getenv("SAY_VOICE", "Samantha")
-OPENAI_TTS_VOICE  = os.getenv("OPENAI_TTS_VOICE", "nova")
+OPENAI_TTS_VOICE  = os.getenv("OPENAI_TTS_VOICE", "alloy")
 _OPENAI_API_KEY   = os.getenv("OPENAI_API_KEY", "")
 
 NUS_SVC = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
