@@ -13,16 +13,22 @@ Audio frames use a compact binary protocol on the same NUS RX channel:
   0xAA + uint16_le_size + uint8_pcm_data   (8 kHz, 8-bit unsigned mono)
   0xAA + 0x00 0x00                          (end of audio — silences speaker)
 
-Audio is generated via macOS `say` + `afconvert` (host-only; no extra deps).
+TTS backend (auto-selected):
+  OPENAI_API_KEY set → OpenAI TTS (neural voice, recommended)
+  otherwise          → macOS say + afconvert
 
 Run on the host machine (macOS BLE can't be accessed from Docker):
   python ble_bridge/bridge.py
 
 Environment variables:
-  SIMULATOR_WS   ws://localhost:18080/ws   simulator WebSocket URL
-  SAY_VOICE      Samantha                  macOS voice name
+  SIMULATOR_WS      ws://localhost:18080/ws   simulator WebSocket URL
+  OPENAI_API_KEY    <key>                     enables OpenAI TTS (recommended)
+  OPENAI_TTS_VOICE  nova                      OpenAI voice name
+  SAY_VOICE         Samantha                  macOS fallback voice name
+  VOLUME_BOOST      3.0                       PCM amplitude multiplier
 """
 
+import array
 import asyncio
 import json
 import logging
@@ -38,8 +44,10 @@ from bleak import BleakClient, BleakScanner
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
 
-SIMULATOR_WS = os.getenv("SIMULATOR_WS", "ws://localhost:18080/ws")
-SAY_VOICE    = os.getenv("SAY_VOICE", "Samantha")
+SIMULATOR_WS      = os.getenv("SIMULATOR_WS", "ws://localhost:18080/ws")
+SAY_VOICE         = os.getenv("SAY_VOICE", "Samantha")
+OPENAI_TTS_VOICE  = os.getenv("OPENAI_TTS_VOICE", "nova")
+_OPENAI_API_KEY   = os.getenv("OPENAI_API_KEY", "")
 
 NUS_SVC = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
 NUS_RX  = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
@@ -79,32 +87,72 @@ async def ble_write_json(client: BleakClient, payload: dict) -> None:
 
 # ── TTS + audio streaming ─────────────────────────────────────────────────────
 
-VOLUME_BOOST = float(os.getenv("VOLUME_BOOST", "3.0"))  # 1.0 = unity, 3.0 = 3× gain
+VOLUME_BOOST = float(os.getenv("VOLUME_BOOST", "3.0"))  # 1.0 = unity
 
 
-def _boost(pcm: bytes) -> bytes:
-    """Amplify unsigned 8-bit PCM in-place. Clips at 0/255 to avoid wrap-around."""
-    return bytes(
-        max(0, min(255, int((b - 128) * VOLUME_BOOST) + 128))
-        for b in pcm
-    )
+def _boost_and_pack(pcm16_raw: bytes) -> bytes:
+    """Convert signed 16-bit LE PCM → boosted unsigned 8-bit.
+
+    Working at 16-bit before packing gives much cleaner downsampling than
+    going straight to 8-bit in afconvert (avoids double quantisation noise).
+    """
+    samples = array.array("h", pcm16_raw)   # signed 16-bit little-endian
+    out = bytearray(len(samples))
+    for i, s in enumerate(samples):
+        # scale: 16-bit range ±32768 → 8-bit range 0-255, with boost
+        v = int(s * VOLUME_BOOST / 256) + 128
+        out[i] = max(0, min(255, v))
+    return bytes(out)
 
 
-def _tts_to_pcm(text: str) -> bytes:
-    """Generate 8 kHz 8-bit unsigned mono PCM from text using macOS say/afconvert."""
+def _macos_tts_to_pcm(text: str) -> bytes:
+    """macOS say → AIFF → 16-bit 8 kHz WAV (max quality SRC) → boosted 8-bit."""
     with tempfile.TemporaryDirectory() as tmp:
-        aiff = os.path.join(tmp, "speech.aiff")
-        wav  = os.path.join(tmp, "speech.wav")
+        aiff  = os.path.join(tmp, "s.aiff")
+        wav16 = os.path.join(tmp, "s16.wav")
         subprocess.run(
             ["say", "-v", SAY_VOICE, "-o", aiff, "--", text],
             check=True, capture_output=True,
         )
+        # -q 127: highest quality sample-rate conversion
         subprocess.run(
-            ["afconvert", aiff, wav, "-f", "WAVE", "-d", "UI8@8000", "-c", "1"],
+            ["afconvert", aiff, wav16, "-f", "WAVE", "-d", "LEI16@8000", "-c", "1", "-q", "127"],
             check=True, capture_output=True,
         )
-        with wave.open(wav, "rb") as wf:
-            return _boost(wf.readframes(wf.getnframes()))
+        with wave.open(wav16, "rb") as wf:
+            return _boost_and_pack(wf.readframes(wf.getnframes()))
+
+
+def _openai_tts_to_pcm(text: str) -> bytes:
+    """OpenAI TTS → WAV (24 kHz) → 8 kHz 8-bit via afconvert."""
+    from openai import OpenAI
+    client = OpenAI(api_key=_OPENAI_API_KEY)
+    response = client.audio.speech.create(
+        model="tts-1-hd",
+        voice=OPENAI_TTS_VOICE,
+        input=text,
+        response_format="wav",
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        in_wav  = os.path.join(tmp, "openai.wav")
+        out_wav = os.path.join(tmp, "out16.wav")
+        in_wav_bytes = b"".join(response.iter_bytes())
+        with open(in_wav, "wb") as f:
+            f.write(in_wav_bytes)
+        subprocess.run(
+            ["afconvert", in_wav, out_wav, "-f", "WAVE", "-d", "LEI16@8000", "-c", "1", "-q", "127"],
+            check=True, capture_output=True,
+        )
+        with wave.open(out_wav, "rb") as wf:
+            return _boost_and_pack(wf.readframes(wf.getnframes()))
+
+
+def _tts_to_pcm(text: str) -> bytes:
+    if _OPENAI_API_KEY:
+        log.info("TTS: OpenAI %s", OPENAI_TTS_VOICE)
+        return _openai_tts_to_pcm(text)
+    log.info("TTS: macOS say (%s)", SAY_VOICE)
+    return _macos_tts_to_pcm(text)
 
 
 async def stream_audio(client: BleakClient, text: str) -> None:
