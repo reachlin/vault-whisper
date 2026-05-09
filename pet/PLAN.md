@@ -72,6 +72,8 @@
 - [x] Pip-Boy 3000 face aesthetic — phosphor green, CRT scan lines, block-pixel eyes/mouth
 - [x] Robco terminal sleep screen — shown when BLE disconnects; speaker silenced via `i2s_zero_dma_buffer`
 - [x] Browser mute button — silences computer TTS when M5Stack speaker is active
+- [x] Multilingual voice — `language` field in `identity.yaml`; SAY_VOICE env for macOS voices (Meijia, Tingting, Thomas…); OpenAI TTS auto-detects language
+- [x] Camera vision — Pepper receives webcam frame every tick and actively reacts to what she sees
 
 ### Done — Speaker (Hat SPK2)
 
@@ -79,15 +81,16 @@
 - BCLK=GPIO26, LRCLK=GPIO0, DIN=GPIO25 — 8kHz 16-bit left-channel I2S
 
 **BLE audio protocol:** binary frames on NUS RX channel
-- `0xAA + uint16_le_size + uint8_pcm_data` — audio frame
+- `0xAA + uint16_le_size + int16_le_pcm_data` — audio frame (signed 16-bit LE)
 - `0xAA + 0x00 0x00` — end-of-audio sentinel (silences DMA buffer)
 - Paced at 85% of playback rate so DMA buffer stays full
+- **16kHz failed** — BLE write-without-response drops frames silently above ~16KB/s on ESP32; 8kHz 16-bit (~16KB/s) is the ceiling without connection interval negotiation
 
 **TTS pipeline (macOS):**
-- `say -v Samantha` → AIFF → `afconvert -d LEI16@8000 -q 127` → Python 8-bit packing
+- `say -v <voice>` → AIFF → `afconvert -d LEI16@8000 -q 127` → raw int16_le bytes over BLE
 - 3× volume boost applied before streaming
 - OpenAI `tts-1-hd` with voice `alloy` also implemented (set `OPENAI_API_KEY` to activate)
-  — confirmed to fit Pip-Boy aesthetic; disabled by default to save tokens
+  — confirmed to fit Pip-Boy aesthetic; auto-detects language; disabled by default to save tokens
 
 ### Next — Camera / Eyes (needs hardware: Unit CamS3, ~$15–25)
 
