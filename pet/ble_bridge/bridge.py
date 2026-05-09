@@ -10,8 +10,8 @@ Display updates are sent as newline-terminated JSON (NUS RX channel):
   {"mood": "happy", "activity": "thinking", "speech": "INTC is $88.14"}
 
 Audio frames use a compact binary protocol on the same NUS RX channel:
-  0xAA + uint16_le_size + uint8_pcm_data   (8 kHz, 8-bit unsigned mono)
-  0xAA + 0x00 0x00                          (end of audio — silences speaker)
+  0xAA + uint16_le_size + int16_le_pcm_data   (16 kHz, 16-bit signed LE mono)
+  0xAA + 0x00 0x00                             (end of audio — silences speaker)
 
 TTS backend (auto-selected):
   OPENAI_API_KEY set → OpenAI TTS (neural voice, recommended)
@@ -53,8 +53,8 @@ NUS_SVC = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
 NUS_RX  = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
 
 AUDIO_MAGIC   = b"\xaa"
-AUDIO_RATE    = 8000    # Hz — matches firmware AUDIO_RATE
-AUDIO_PAYLOAD = 175     # PCM bytes per BLE frame (fits in one MTU-185 write with 3-byte header)
+AUDIO_RATE    = 16000   # Hz — matches firmware AUDIO_RATE
+AUDIO_PAYLOAD = 176     # PCM bytes per BLE frame (even number; 88 int16 samples per frame)
 
 
 # ── BLE helpers ───────────────────────────────────────────────────────────────
@@ -90,19 +90,16 @@ async def ble_write_json(client: BleakClient, payload: dict) -> None:
 VOLUME_BOOST = float(os.getenv("VOLUME_BOOST", "3.0"))  # 1.0 = unity
 
 
-def _boost_and_pack(pcm16_raw: bytes) -> bytes:
-    """Convert signed 16-bit LE PCM → boosted unsigned 8-bit.
+def _boost_and_pack16(pcm16_raw: bytes) -> bytes:
+    """Boost signed 16-bit LE PCM in place and return as signed 16-bit LE.
 
-    Working at 16-bit before packing gives much cleaner downsampling than
-    going straight to 8-bit in afconvert (avoids double quantisation noise).
+    Sent directly to firmware — no bit-depth reduction, so no quantisation noise.
     """
     samples = array.array("h", pcm16_raw)   # signed 16-bit little-endian
-    out = bytearray(len(samples))
     for i, s in enumerate(samples):
-        # scale: 16-bit range ±32768 → 8-bit range 0-255, with boost
-        v = int(s * VOLUME_BOOST / 256) + 128
-        out[i] = max(0, min(255, v))
-    return bytes(out)
+        v = int(s * VOLUME_BOOST)
+        samples[i] = max(-32768, min(32767, v))
+    return samples.tobytes()
 
 
 def _macos_tts_to_pcm(text: str) -> bytes:
@@ -116,11 +113,11 @@ def _macos_tts_to_pcm(text: str) -> bytes:
         )
         # -q 127: highest quality sample-rate conversion
         subprocess.run(
-            ["afconvert", aiff, wav16, "-f", "WAVE", "-d", "LEI16@8000", "-c", "1", "-q", "127"],
+            ["afconvert", aiff, wav16, "-f", "WAVE", "-d", "LEI16@16000", "-c", "1", "-q", "127"],
             check=True, capture_output=True,
         )
         with wave.open(wav16, "rb") as wf:
-            return _boost_and_pack(wf.readframes(wf.getnframes()))
+            return _boost_and_pack16(wf.readframes(wf.getnframes()))
 
 
 def _openai_tts_to_pcm(text: str) -> bytes:
@@ -140,11 +137,11 @@ def _openai_tts_to_pcm(text: str) -> bytes:
         with open(in_wav, "wb") as f:
             f.write(in_wav_bytes)
         subprocess.run(
-            ["afconvert", in_wav, out_wav, "-f", "WAVE", "-d", "LEI16@8000", "-c", "1", "-q", "127"],
+            ["afconvert", in_wav, out_wav, "-f", "WAVE", "-d", "LEI16@16000", "-c", "1", "-q", "127"],
             check=True, capture_output=True,
         )
         with wave.open(out_wav, "rb") as wf:
-            return _boost_and_pack(wf.readframes(wf.getnframes()))
+            return _boost_and_pack16(wf.readframes(wf.getnframes()))
 
 
 def _tts_to_pcm(text: str) -> bytes:
@@ -166,7 +163,8 @@ async def stream_audio(client: BleakClient, text: str) -> None:
         frame = AUDIO_MAGIC + struct.pack("<H", len(chunk)) + chunk
         await client.write_gatt_char(NUS_RX, frame, response=False)
         # pace slightly faster than playback rate so the DMA buffer stays full
-        await asyncio.sleep(len(chunk) / AUDIO_RATE * 0.85)
+        # len(chunk) is bytes; divide by 2 for 16-bit samples, then by sample rate
+        await asyncio.sleep(len(chunk) / (AUDIO_RATE * 2) * 0.85)
 
     # end-of-audio sentinel — silences the DMA buffer
     await client.write_gatt_char(NUS_RX, AUDIO_MAGIC + b"\x00\x00", response=False)

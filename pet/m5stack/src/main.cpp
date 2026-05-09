@@ -32,7 +32,7 @@ static const uint16_t PIP_BG     = 0x0060;   // #001800  face fill
 #define I2S_BCLK   GPIO_NUM_26
 #define I2S_LRCLK  GPIO_NUM_0    // boot-strapping pin; fine after boot
 #define I2S_DOUT   GPIO_NUM_25
-#define AUDIO_RATE 8000
+#define AUDIO_RATE 16000
 
 static void initI2S() {
     i2s_config_t cfg = {};
@@ -43,7 +43,7 @@ static void initI2S() {
     cfg.communication_format = I2S_COMM_FORMAT_STAND_I2S;
     cfg.intr_alloc_flags     = ESP_INTR_FLAG_LEVEL1;
     cfg.dma_buf_count        = 8;
-    cfg.dma_buf_len          = 256;
+    cfg.dma_buf_len          = 512;   // 4 KB total — ~64 ms headroom at 16 kHz 16-bit
     cfg.use_apll             = false;
     cfg.tx_desc_auto_clear   = true;
     i2s_driver_install(I2S_PORT, &cfg, 0, nullptr);
@@ -57,11 +57,9 @@ static void initI2S() {
 }
 
 static void writeAudioChunk(const uint8_t* src, uint16_t n) {
-    static int16_t pcm16[256];
-    for (uint16_t i = 0; i < n; i++)
-        pcm16[i] = (int16_t)((src[i] - 128) * 256);
+    // n is byte count (even); data is signed 16-bit LE — write directly to I2S
     size_t written;
-    i2s_write(I2S_PORT, pcm16, n * 2, &written, portMAX_DELAY);
+    i2s_write(I2S_PORT, src, n, &written, portMAX_DELAY);
 }
 
 // ── Activity ring ─────────────────────────────────────────────────────────────
@@ -315,9 +313,9 @@ static void drawSleepScreen(uint32_t t) {
 }
 
 // ── BLE receive — state machine ───────────────────────────────────────────────
-// '{' ... '\n'                  → JSON display/state update
-// 0xAA + uint16_le + uint8[]   → PCM audio chunk (8 kHz, 8-bit unsigned)
-// 0xAA + 0x00 0x00             → end of audio
+// '{' ... '\n'                   → JSON display/state update
+// 0xAA + uint16_le + int16_le[] → PCM audio chunk (16 kHz, 16-bit signed LE)
+// 0xAA + 0x00 0x00              → end of audio
 
 enum BleState : uint8_t { BS_IDLE, BS_JSON, BS_AUDIO_SZ_LO, BS_AUDIO_SZ_HI, BS_AUDIO_DATA };
 static BleState bsState  = BS_IDLE;
