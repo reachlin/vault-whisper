@@ -238,7 +238,7 @@ class AgentLoop:
         else:
             parts.append("No new messages from human. Focus on exploring, not greeting.")
 
-        parts.append("Camera frame attached." if frame else "No camera frame.")
+        parts.append("Camera frame attached — look at it and react to what you see." if frame else "No camera frame.")
         parts.append(f"\nCURRENT DIRECTIVE:\n{self._directive.read()}")
         parts.append("\nWhat do you do?")
 
