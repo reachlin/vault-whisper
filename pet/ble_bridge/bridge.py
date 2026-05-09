@@ -10,7 +10,7 @@ Display updates are sent as newline-terminated JSON (NUS RX channel):
   {"mood": "happy", "activity": "thinking", "speech": "INTC is $88.14"}
 
 Audio frames use a compact binary protocol on the same NUS RX channel:
-  0xAA + uint16_le_size + int16_le_pcm_data   (16 kHz, 16-bit signed LE mono)
+  0xAA + uint16_le_size + int16_le_pcm_data   (8 kHz, 16-bit signed LE mono)
   0xAA + 0x00 0x00                             (end of audio — silences speaker)
 
 TTS backend (auto-selected):
@@ -53,7 +53,7 @@ NUS_SVC = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
 NUS_RX  = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
 
 AUDIO_MAGIC   = b"\xaa"
-AUDIO_RATE    = 16000   # Hz — matches firmware AUDIO_RATE
+AUDIO_RATE    = 8000    # Hz — matches firmware AUDIO_RATE
 AUDIO_PAYLOAD = 176     # PCM bytes per BLE frame (even number; 88 int16 samples per frame)
 
 
@@ -113,7 +113,7 @@ def _macos_tts_to_pcm(text: str) -> bytes:
         )
         # -q 127: highest quality sample-rate conversion
         subprocess.run(
-            ["afconvert", aiff, wav16, "-f", "WAVE", "-d", "LEI16@16000", "-c", "1", "-q", "127"],
+            ["afconvert", aiff, wav16, "-f", "WAVE", "-d", "LEI16@8000", "-c", "1", "-q", "127"],
             check=True, capture_output=True,
         )
         with wave.open(wav16, "rb") as wf:
@@ -137,7 +137,7 @@ def _openai_tts_to_pcm(text: str) -> bytes:
         with open(in_wav, "wb") as f:
             f.write(in_wav_bytes)
         subprocess.run(
-            ["afconvert", in_wav, out_wav, "-f", "WAVE", "-d", "LEI16@16000", "-c", "1", "-q", "127"],
+            ["afconvert", in_wav, out_wav, "-f", "WAVE", "-d", "LEI16@8000", "-c", "1", "-q", "127"],
             check=True, capture_output=True,
         )
         with wave.open(out_wav, "rb") as wf:

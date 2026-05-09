@@ -32,7 +32,7 @@ static const uint16_t PIP_BG     = 0x0060;   // #001800  face fill
 #define I2S_BCLK   GPIO_NUM_26
 #define I2S_LRCLK  GPIO_NUM_0    // boot-strapping pin; fine after boot
 #define I2S_DOUT   GPIO_NUM_25
-#define AUDIO_RATE 16000
+#define AUDIO_RATE 8000
 
 static void initI2S() {
     i2s_config_t cfg = {};
@@ -314,7 +314,7 @@ static void drawSleepScreen(uint32_t t) {
 
 // ── BLE receive — state machine ───────────────────────────────────────────────
 // '{' ... '\n'                   → JSON display/state update
-// 0xAA + uint16_le + int16_le[] → PCM audio chunk (16 kHz, 16-bit signed LE)
+// 0xAA + uint16_le + int16_le[] → PCM audio chunk (8 kHz, 16-bit signed LE)
 // 0xAA + 0x00 0x00              → end of audio
 
 enum BleState : uint8_t { BS_IDLE, BS_JSON, BS_AUDIO_SZ_LO, BS_AUDIO_SZ_HI, BS_AUDIO_DATA };
