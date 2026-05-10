@@ -20,11 +20,12 @@ TTS backend (auto-selected):
 Run on the host machine (macOS BLE can't be accessed from Docker):
   python ble_bridge/bridge.py
 
-Environment variables:
+Config is read from config/identity.yaml (voice, language) and .env (API keys).
+Environment variables override identity.yaml values:
   SIMULATOR_WS      ws://localhost:18080/ws   simulator WebSocket URL
   OPENAI_API_KEY    <key>                     enables OpenAI TTS (recommended)
-  OPENAI_TTS_VOICE  nova                      OpenAI voice name
-  SAY_VOICE         Samantha                  macOS fallback voice name
+  OPENAI_TTS_VOICE  alloy                     OpenAI voice name
+  SAY_VOICE         Meijia                    macOS voice (overrides identity.yaml)
   VOLUME_BOOST      3.0                       PCM amplitude multiplier
 """
 
@@ -37,17 +38,36 @@ import struct
 import subprocess
 import tempfile
 import wave
+from pathlib import Path
 
+import yaml
 import websockets
 from bleak import BleakClient, BleakScanner
+from dotenv import load_dotenv
+
+load_dotenv()  # reads .env from current dir or any parent
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
 
+
+def _read_identity() -> dict:
+    """Load config/identity.yaml relative to this file's repo root."""
+    path = Path(__file__).parent.parent / "config" / "identity.yaml"
+    if path.exists():
+        with open(path) as f:
+            return yaml.safe_load(f) or {}
+    return {}
+
+
+_identity = _read_identity()
+
 SIMULATOR_WS      = os.getenv("SIMULATOR_WS", "ws://localhost:18080/ws")
-SAY_VOICE         = os.getenv("SAY_VOICE", "Samantha")
+SAY_VOICE         = os.getenv("SAY_VOICE") or _identity.get("voice", "Samantha")
 OPENAI_TTS_VOICE  = os.getenv("OPENAI_TTS_VOICE", "alloy")
 _OPENAI_API_KEY   = os.getenv("OPENAI_API_KEY", "")
+
+log.info("voice: %s | openai TTS: %s", SAY_VOICE, "yes" if _OPENAI_API_KEY else "no")
 
 NUS_SVC = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
 NUS_RX  = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
