@@ -14,6 +14,8 @@ last_frame: str | None = None
 last_transcript: str | None = None
 pet_activity: str = "idle"
 connections: list[WebSocket] = []
+minecraft_server: str | None = None   # "host:port" when connected, None otherwise
+minecraft_state: dict = {}            # last state snapshot pushed from Mineflayer bridge
 
 _static = Path(__file__).parent / "static"
 
@@ -57,6 +59,24 @@ class MoodRequest(BaseModel):
 
 class ActivityRequest(BaseModel):
     activity: str
+
+
+class MinecraftJoinRequest(BaseModel):
+    host: str = "localhost"
+    port: int = 25565
+
+
+class MinecraftStateRequest(BaseModel):
+    connected: bool = False
+    username: str | None = None
+    position: dict | None = None
+    health: int | None = None
+    food: int | None = None
+    game_mode: str | None = None
+    time_of_day: int | None = None
+    nearby_entities: list | None = None
+    nearby_blocks: dict | None = None
+    inventory: list | None = None
 
 
 # --- helpers ---
@@ -146,6 +166,44 @@ async def set_pet_activity(req: ActivityRequest):
 async def speak(req: SpeakRequest):
     await broadcast({"type": "speak", "text": req.text})
     return {"text": req.text}
+
+
+@app.get("/minecraft/status")
+def minecraft_status():
+    return {"connected": minecraft_server is not None, "server": minecraft_server}
+
+
+@app.post("/minecraft/join")
+async def minecraft_join(req: MinecraftJoinRequest):
+    global minecraft_server
+    minecraft_server = f"{req.host}:{req.port}"
+    await broadcast({"type": "minecraft", "connected": True, "server": minecraft_server})
+    return {"ok": True, "server": minecraft_server}
+
+
+@app.post("/minecraft/leave")
+async def minecraft_leave():
+    global minecraft_server
+    minecraft_server = None
+    await broadcast({"type": "minecraft", "connected": False, "server": None})
+    return {"ok": True}
+
+
+@app.get("/mc/state")
+def get_mc_state():
+    return minecraft_state
+
+
+@app.post("/mc/state")
+async def receive_mc_state(req: MinecraftStateRequest):
+    global minecraft_state, minecraft_server
+    minecraft_state = req.model_dump()
+    if req.connected and minecraft_server is None and req.username:
+        minecraft_server = "bridge"
+    elif not req.connected:
+        minecraft_server = None
+    await broadcast({"type": "mc_state", "data": minecraft_state})
+    return {"ok": True}
 
 
 @app.websocket("/ws")

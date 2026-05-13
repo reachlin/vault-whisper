@@ -1,0 +1,11 @@
+{
+  "name": "pepper-minecraft-bridge",
+  "version": "1.0.0",
+  "description": "Mineflayer HTTP bridge — connects Pepper's brain to a Minecraft Java server",
+  "main": "bridge.js",
+  "dependencies": {
+    "express": "^4.21.0",
+    "mineflayer": "^4.37.0",
+    "mineflayer-pathfinder": "^2.4.5"
+  }
+}

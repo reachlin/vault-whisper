@@ -89,6 +89,47 @@ _TOOLS_SPEC = [
             "required": ["url"],
         },
     },
+    {
+        "name": "mc_state",
+        "description": "Get current Minecraft game state: position, health, food, inventory, nearby entities and blocks. Returns {connected: false} if not in a game.",
+        "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "mc_chat",
+        "description": "Send a chat message in Minecraft.",
+        "parameters": {
+            "type": "object",
+            "properties": {"text": {"type": "string"}},
+            "required": ["text"],
+        },
+    },
+    {
+        "name": "mc_move",
+        "description": "Pathfind to (x, y, z) coordinates in the Minecraft world. Blocks until arrival or failure.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "x": {"type": "number"},
+                "y": {"type": "number"},
+                "z": {"type": "number"},
+            },
+            "required": ["x", "y", "z"],
+        },
+    },
+    {
+        "name": "mc_mine",
+        "description": "Find and mine the nearest block of a given type (e.g. 'oak_log', 'stone', 'coal_ore').",
+        "parameters": {
+            "type": "object",
+            "properties": {"block_type": {"type": "string"}},
+            "required": ["block_type"],
+        },
+    },
+    {
+        "name": "mc_attack",
+        "description": "Attack the nearest mob.",
+        "parameters": {"type": "object", "properties": {}},
+    },
 ]
 
 _JS_HEAVY_DOMAINS = {
@@ -165,6 +206,7 @@ class AgentLoop:
 
         self._directive = Directive(memory_file.parent / "directive.md")
         self._http = httpx.AsyncClient(timeout=10.0, trust_env=False)
+        self._mc_url = os.environ.get("MC_BRIDGE_URL", "http://host.docker.internal:18090")
         self._last_transcript: str | None = None  # only react when transcript changes
         self._last_actions: list[str] = []         # actions from the PREVIOUS tick
         self._cur_actions: list[str] = []          # actions accumulating in current tick
@@ -354,10 +396,36 @@ class AgentLoop:
                 return await self._search(args["query"])
             if name == "browse":
                 return await self._browse(args["url"])
+            if name == "mc_state":
+                return await self._mc_http("GET", "/state")
+            if name == "mc_chat":
+                return await self._mc_http("POST", "/chat", {"text": args["text"]})
+            if name == "mc_move":
+                await self._sim.set_activity("moving")
+                result = await self._mc_http("POST", "/move", {"x": args["x"], "y": args["y"], "z": args["z"]})
+                await self._sim.set_activity("thinking")
+                self._cur_actions.append(f"MC move to ({args['x']},{args['y']},{args['z']})")
+                return result
+            if name == "mc_mine":
+                result = await self._mc_http("POST", "/mine", {"block_type": args["block_type"]})
+                self._cur_actions.append(f"MC mine {args['block_type']}")
+                return result
+            if name == "mc_attack":
+                result = await self._mc_http("POST", "/attack", {})
+                self._cur_actions.append("MC attacked mob")
+                return result
         except Exception as e:
             log.error("tool %s failed: %s", name, e)
             return {"error": str(e)}
         return {"error": f"unknown tool: {name}"}
+
+    async def _mc_http(self, method: str, path: str, body: dict | None = None) -> dict:
+        url = self._mc_url + path
+        if method == "GET":
+            r = await self._http.get(url)
+        else:
+            r = await self._http.post(url, json=body or {})
+        return r.json()
 
     async def _lynx(self, url: str) -> str:
         proc = await asyncio.create_subprocess_exec(

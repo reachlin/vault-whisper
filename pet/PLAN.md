@@ -141,7 +141,55 @@ Brain sends movement commands via WiFi HTTP to motor node independently from BLE
 
 ---
 
-## Phase 4 — Extras
+## Phase 4 — Minecraft Integration (in progress)
+
+### Architecture
+
+```
+Minecraft Java Server
+        │
+        │ Mineflayer protocol
+        ▼
+minecraft/bridge.js  (Node.js, port 18090, runs on host)
+        │                               ▲
+        │ POST /mc/state (5s push)       │ GET /state, POST /chat,
+        │                               │ POST /move, POST /mine,
+        ▼                               │ POST /attack
+simulator/server.py  ◄──────────────── brain/loop.py
+  (stores MC state,                     (MC_BRIDGE_URL → host:18090)
+   WS-broadcasts mc_state)
+```
+
+### Done
+- [x] Mineflayer bridge (`minecraft/bridge.js`) — HTTP API wrapping Mineflayer bot
+  - Endpoints: `POST /join`, `POST /leave`, `GET /state`, `POST /chat`, `POST /move`, `POST /mine`, `POST /place`, `POST /attack`
+  - Pushes game state to simulator every 5s
+  - Forwards in-game chat to simulator as transcript
+- [x] Simulator `/mc/state` endpoint — receives bridge push, stores snapshot, WS-broadcasts
+- [x] Simulator `/minecraft/join|leave|status` — browser UI join/leave controls
+- [x] Browser "Join Minecraft" button with WS sync
+- [x] Brain MC tool specs: `mc_state`, `mc_chat`, `mc_move`, `mc_mine`, `mc_attack`
+- [x] Brain MC tool handlers wired in `_execute` + `_mc_http` helper
+- [x] `MC_BRIDGE_URL` env var in docker-compose brain service
+- [x] System prompt updated: Pepper knows to use MC tools when `mc_state` shows connected
+
+### To Do / Test
+- [ ] `cd minecraft && npm install` — install Mineflayer deps (package.json ready)
+- [ ] Verify Mineflayer supports Minecraft 26.1.x (new Mojang versioning) — may need `--version` pin
+- [ ] Start a local Minecraft Java server, connect from bridge, verify Pepper navigates
+- [ ] Update `/pepper` skill to include MC bridge startup step
+- [ ] Add `mc_place` tool to brain (bridge already has `/place`)
+
+### Startup (manual, bridge runs on host outside Docker)
+```bash
+cd minecraft && npm install && node bridge.js
+# then from browser: click "Join Minecraft", enter server address
+# brain auto-detects connected=true via mc_state()
+```
+
+---
+
+## Phase 5 — Extras
 
 - Emotion state machine (mood persists across rounds, decays over time)
 - Web dashboard (FastAPI + HTMX, shows live brain state)

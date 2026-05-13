@@ -202,6 +202,8 @@ function connect() {
       const el = document.getElementById('h-activity');
       el.textContent = msg.activity;
       el.style.color = ACTIVITY_COLORS[msg.activity] ?? '#e6edf3';
+    } else if (msg.type === 'minecraft') {
+      handleMcEvent(msg);
     }
   };
 
@@ -378,6 +380,61 @@ function addLog(msg, cls = '') {
   el.className = `log-entry ${cls}`;
   el.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
   log.prepend(el);
+}
+
+// --- minecraft ---
+
+const mcBtn    = document.getElementById('mc-btn');
+const mcStatus = document.getElementById('mc-status');
+let mcConnected = false;
+
+mcBtn.addEventListener('click', async () => {
+  if (mcConnected) {
+    const r = await fetch('/minecraft/leave', { method: 'POST' });
+    if (r.ok) {
+      mcConnected = false;
+      mcStatus.textContent = 'not in game';
+      mcBtn.textContent = 'Join Minecraft';
+      mcBtn.style.background = '#5d9e22';
+      addLog('Pepper left Minecraft');
+    }
+    return;
+  }
+  const raw = prompt('Minecraft server address:', 'localhost:25565');
+  if (!raw) return;
+  const [host, portStr] = raw.includes(':') ? raw.split(':') : [raw, '25565'];
+  const port = parseInt(portStr) || 25565;
+  mcStatus.textContent = `connecting to ${host}:${port}…`;
+  const r = await fetch('/minecraft/join', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ host, port }),
+  });
+  const data = await r.json();
+  if (data.ok) {
+    mcConnected = true;
+    mcStatus.textContent = `in game: ${host}:${port}`;
+    mcBtn.textContent = 'Leave Minecraft';
+    mcBtn.style.background = '#b91c1c';
+    addLog(`Pepper joined Minecraft at ${host}:${port}`);
+  } else {
+    mcStatus.textContent = `failed: ${data.error ?? 'unknown'}`;
+  }
+});
+
+// sync minecraft state from websocket
+function handleMcEvent(msg) {
+  if (msg.type !== 'minecraft') return;
+  mcConnected = msg.connected;
+  if (msg.connected) {
+    mcStatus.textContent = `in game: ${msg.server}`;
+    mcBtn.textContent = 'Leave Minecraft';
+    mcBtn.style.background = '#b91c1c';
+  } else {
+    mcStatus.textContent = 'not in game';
+    mcBtn.textContent = 'Join Minecraft';
+    mcBtn.style.background = '#5d9e22';
+  }
 }
 
 // --- init ---
