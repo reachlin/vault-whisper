@@ -84,7 +84,8 @@
 - `0xAA + uint16_le_size + int16_le_pcm_data` — audio frame (signed 16-bit LE)
 - `0xAA + 0x00 0x00` — end-of-audio sentinel (silences DMA buffer)
 - Paced at 85% of playback rate so DMA buffer stays full
-- **16kHz failed** — BLE write-without-response drops frames silently above ~16KB/s on ESP32; 8kHz 16-bit (~16KB/s) is the ceiling without connection interval negotiation
+- **16kHz failed on ESP32 (BLE 4.2)** — write-without-response drops frames silently above ~16KB/s; 8kHz 16-bit (~16KB/s) is the ceiling
+- **Fix: upgrade to StickC S3** — BLE 5.0 doubles PHY to 2 Mbps, making 16kHz 16-bit (~32KB/s) viable; update `afconvert` target rate and `AUDIO_RATE` constant
 
 **TTS pipeline (macOS):**
 - `say -v <voice>` → AIFF → `afconvert -d LEI16@8000 -q 127` → raw int16_le bytes over BLE
@@ -92,20 +93,51 @@
 - OpenAI `tts-1-hd` with voice `alloy` also implemented (set `OPENAI_API_KEY` to activate)
   — confirmed to fit Pip-Boy aesthetic; auto-detects language; disabled by default to save tokens
 
-### Next — Camera / Eyes (needs hardware: Unit CamS3, ~$15–25)
+### Recommended Upgrade — Face/Brain (M5Stack StickC S3, ~$20–25)
 
-**Buy:** [M5Stack Unit CamS3 (5MP WiFi)](https://shop.m5stack.com/products/unit-cams3-wi-fi-camera-5mp)
-— standalone WiFi module, MJPEG over HTTP, mount near StickC Plus
+Drop-in replacement for StickC Plus. Same 135×240 display and Hat port, Hat SPK2 still fits.
+
+| | StickC Plus | StickC S3 |
+|---|---|---|
+| Chip | ESP32-PICO-D4 | ESP32-S3 |
+| BLE | 4.2 (1 Mbps) | 5.0 (2 Mbps) |
+| PSRAM | ~520 KB | 8 MB |
+
+**Firmware migration:** `platformio.ini` board → `m5stick-cs3`, `#include <M5StickCPlus.h>` → `#include <M5StickCS3.h>`. Audio: change `AUDIO_RATE` to `16000` and update `afconvert` pipeline from `LEI16@8000` to `LEI16@16000`.
+
+### Next — Camera / Eyes (needs hardware: AtomS3R CAM, ~$15–20)
+
+Unit CamS3 (5MP) is hard to source. **AtomS3R CAM** is the recommended alternative — ESP32-S3, WiFi, MJPEG over HTTP, compact Atom form factor (~24×24mm), easy to mount.
 
 **Integration plan:**
-1. Unit CamS3 streams MJPEG at `http://<cam-ip>/stream`
+1. AtomS3R CAM streams MJPEG at `http://<cam-ip>/stream`
 2. Add `camera_bridge/bridge.py` on host: pulls MJPEG frames, POSTs JPEG to simulator
    `/camera` endpoint (same path the browser WebRTC already uses)
 3. Brain loop already reads frames via `get_last_frame()` — no brain changes needed
 4. Pepper sees through the physical camera instead of (or alongside) the browser webcam
 
-**Wiring note:** Unit CamS3 is WiFi-only; no Grove connection to StickC Plus needed.
+**Wiring note:** AtomS3R CAM is WiFi-only; no Grove connection to StickC needed.
 Both devices connect independently to the same LAN.
+
+### Future — Wheels / Legs
+
+**RoverC Pro** (M5Stack snap-on chassis) was the ideal fit for StickC but is currently out of stock / discontinued everywhere.
+
+**Recommended alternative: separate ESP32 motor controller over WiFi**
+
+```
+Mac brain ──BLE──► StickC S3  (face + speech)
+Mac brain ──WiFi──► ESP32 motor node  (wheels / legs)
+```
+
+Parts (~$15–20 total):
+- ESP32 DevKit (~$5)
+- DRV8833 dual motor driver (~$3) — or L298N if higher current needed
+- 2× TT geared DC motors + wheels (~$8) — standard 1:48 yellow motors
+
+Brain sends movement commands via WiFi HTTP to motor node independently from BLE face channel. Motor node exposes `POST /move` with `{direction, speed, duration_ms}`.
+
+**Legs (future, harder):** PCA9685 I2C servo driver + 4× SG90 servos + 3D-printed chassis. Requires gait programming — not a first build.
 
 ---
 
