@@ -229,6 +229,10 @@ class AgentLoop:
         state = await self._sim.get_state()
         frame = await self._sim.get_last_frame()
         raw_transcript = await self._sim.get_last_transcript()
+        try:
+            mc_state = await self._mc_http("GET", "/state")
+        except Exception:
+            mc_state = {"connected": False}
 
         # Only surface the transcript when it's new
         new_transcript = raw_transcript if raw_transcript != self._last_transcript else None
@@ -242,7 +246,7 @@ class AgentLoop:
         # snapshot previous tick's actions before starting new ones
         self._last_actions = self._cur_actions
         self._cur_actions = []
-        messages = [{"role": "user", "content": self._build_user(state, new_transcript, frame)}]
+        messages = [{"role": "user", "content": self._build_user(state, new_transcript, frame, mc_state)}]
 
         await self._sim.set_activity("thinking")
         try:
@@ -256,7 +260,7 @@ class AgentLoop:
         finally:
             await self._sim.set_activity("idle")
 
-    def _build_user(self, state: dict, transcript: str | None, frame: str | None):
+    def _build_user(self, state: dict, transcript: str | None, frame: str | None, mc_state: dict | None = None):
         pet = state["pet"]
         cfg = state["config"]
 
@@ -281,6 +285,33 @@ class AgentLoop:
             parts.append("No new messages from human. Focus on exploring, not greeting.")
 
         parts.append("Camera frame attached — look at it and react to what you see." if frame else "No camera frame.")
+
+        if mc_state and mc_state.get("connected"):
+            _hostile = {"zombie", "skeleton", "creeper", "spider", "enderman", "witch", "slime",
+                        "phantom", "drowned", "husk", "stray", "pillager", "ravager", "blaze"}
+            p = mc_state.get("position", {})
+            entities = mc_state.get("nearby_entities", [])
+            hostile_near = [e for e in entities if e.get("name", "").lower() in _hostile and e.get("distance", 99) < 8]
+            entity_str = ", ".join(f"{e['name']}({e['distance']}m)" for e in entities[:5]) or "none"
+            inv = [f"{i['name']}x{i['count']}" for i in mc_state.get("inventory", [])[:6]]
+            health = mc_state.get("health", 20)
+            mc_text = (
+                f"\nMINECRAFT: You are in-game as {mc_state.get('username','Pepper')}. "
+                f"Position: ({p.get('x')},{p.get('y')},{p.get('z')}). "
+                f"Health: {health}/20. Food: {mc_state.get('food')}/20. "
+                f"Mode: {mc_state.get('game_mode')}. "
+                f"Nearby: {entity_str}. "
+                f"Inventory: {', '.join(inv) or 'empty'}."
+            )
+            if hostile_near:
+                names = ", ".join(f"{e['name']} ({e['distance']}m)" for e in hostile_near)
+                mc_text += f" *** DANGER: {names} nearby — use mc_attack NOW to fight back! ***"
+            elif health <= 8:
+                mc_text += " *** LOW HEALTH — find shelter or flee! ***"
+            else:
+                mc_text += " Explore, gather wood with mc_mine, survive!"
+            parts.append(mc_text)
+
         parts.append(f"\nCURRENT DIRECTIVE:\n{self._directive.read()}")
         parts.append("\nWhat do you do?")
 
@@ -363,6 +394,21 @@ class AgentLoop:
 
     async def _execute(self, name: str, args: dict) -> dict:
         log.info("tool: %s %s", name, args)
+        label = name
+        if name == "speak":
+            label = f'speak: "{str(args.get("text",""))[:60]}"'
+        elif name == "mc_move":
+            label = f"mc_move → ({args.get('x')},{args.get('y')},{args.get('z')})"
+        elif name == "mc_mine":
+            label = f"mc_mine: {args.get('block_type')}"
+        elif name == "mc_chat":
+            label = f'mc_chat: "{args.get("text","")[:50]}"'
+        elif name == "search":
+            label = f"search: {args.get('query','')[:50]}"
+        elif name == "browse":
+            label = f"browse: {args.get('url','')[:60]}"
+        level = "speak" if name == "speak" else "tool"
+        await self._brain_log(label, level)
         try:
             if name == "move":
                 await self._sim.set_activity("moving")
@@ -418,6 +464,12 @@ class AgentLoop:
             log.error("tool %s failed: %s", name, e)
             return {"error": str(e)}
         return {"error": f"unknown tool: {name}"}
+
+    async def _brain_log(self, text: str, level: str = "") -> None:
+        try:
+            await self._sim._http.post("/brain/log", json={"text": text, "level": level})
+        except Exception:
+            pass
 
     async def _mc_http(self, method: str, path: str, body: dict | None = None) -> dict:
         url = self._mc_url + path

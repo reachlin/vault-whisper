@@ -66,6 +66,11 @@ class MinecraftJoinRequest(BaseModel):
     port: int = 25565
 
 
+class BrainLogRequest(BaseModel):
+    text: str
+    level: str = ""
+
+
 class MinecraftStateRequest(BaseModel):
     connected: bool = False
     username: str | None = None
@@ -186,6 +191,12 @@ async def minecraft_leave():
     global minecraft_server
     minecraft_server = None
     await broadcast({"type": "minecraft", "connected": False, "server": None})
+    return {"ok": True}
+
+
+@app.post("/brain/log")
+async def brain_log(req: BrainLogRequest):
+    await broadcast({"type": "brain_log", "text": req.text, "level": req.level})
     return {"ok": True}
 
 

@@ -204,6 +204,10 @@ function connect() {
       el.style.color = ACTIVITY_COLORS[msg.activity] ?? '#e6edf3';
     } else if (msg.type === 'minecraft') {
       handleMcEvent(msg);
+    } else if (msg.type === 'mc_state') {
+      updateMcHud(msg.data);
+    } else if (msg.type === 'brain_log') {
+      addBrainLog(msg.text, msg.level || '');
     }
   };
 
@@ -434,7 +438,31 @@ function handleMcEvent(msg) {
     mcStatus.textContent = 'not in game';
     mcBtn.textContent = 'Join Minecraft';
     mcBtn.style.background = '#5d9e22';
+    document.getElementById('mc-hud').style.display = 'none';
   }
+}
+
+function updateMcHud(data) {
+  const hud = document.getElementById('mc-hud');
+  if (!data || !data.connected) { hud.style.display = 'none'; return; }
+  hud.style.display = 'block';
+  const p = data.position || {};
+  document.getElementById('mc-pos').textContent = `${p.x ?? '?'},${p.y ?? '?'},${p.z ?? '?'}`;
+  document.getElementById('mc-health').textContent = `${data.health ?? '?'}/20`;
+  document.getElementById('mc-food').textContent = `${data.food ?? '?'}/20`;
+  document.getElementById('mc-mode').textContent = data.game_mode ?? '?';
+  const entities = (data.nearby_entities || []).slice(0, 3).map(e => `${e.name}(${e.distance}m)`).join(' ');
+  document.getElementById('mc-nearby').textContent = entities || 'none';
+}
+
+const brainLog = document.getElementById('brain-log');
+function addBrainLog(text, level) {
+  const el = document.createElement('div');
+  el.style.padding = '1px 0';
+  el.style.color = level === 'tool' ? '#f5a623' : level === 'speak' ? '#56d364' : '#8b949e';
+  el.textContent = `[${new Date().toLocaleTimeString()}] ${text}`;
+  brainLog.appendChild(el);
+  brainLog.scrollTop = brainLog.scrollHeight;
 }
 
 // --- init ---

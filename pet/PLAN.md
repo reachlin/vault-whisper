@@ -141,12 +141,12 @@ Brain sends movement commands via WiFi HTTP to motor node independently from BLE
 
 ---
 
-## Phase 4 — Minecraft Integration (in progress)
+## Phase 4 — Minecraft Integration ✅ WORKING (2026-05-14)
 
 ### Architecture
 
 ```
-Minecraft Java Server
+Minecraft Java Server (1.21.4, port 25565, online-mode=false)
         │
         │ Mineflayer protocol
         ▼
@@ -157,28 +157,61 @@ minecraft/bridge.js  (Node.js, port 18090, runs on host)
         ▼                               │ POST /attack
 simulator/server.py  ◄──────────────── brain/loop.py
   (stores MC state,                     (MC_BRIDGE_URL → host:18090)
-   WS-broadcasts mc_state)
+   WS-broadcasts mc_state)              (mc_state injected every tick)
+        │
+        ▼ WS broadcast
+simulator UI  —  MC HUD panel (pos/health/food/nearby) + Brain Log panel
 ```
 
 ### Done
 - [x] Mineflayer bridge (`minecraft/bridge.js`) — HTTP API wrapping Mineflayer bot
   - Endpoints: `POST /join`, `POST /leave`, `GET /state`, `POST /chat`, `POST /move`, `POST /mine`, `POST /place`, `POST /attack`
-  - Pushes game state to simulator every 5s
-  - Forwards in-game chat to simulator as transcript
+  - Pushes game state to simulator every 5s; forwards in-game chat as transcript
 - [x] Simulator `/mc/state` endpoint — receives bridge push, stores snapshot, WS-broadcasts
 - [x] Simulator `/minecraft/join|leave|status` — browser UI join/leave controls
-- [x] Browser "Join Minecraft" button with WS sync
-- [x] Brain MC tool specs: `mc_state`, `mc_chat`, `mc_move`, `mc_mine`, `mc_attack`
-- [x] Brain MC tool handlers wired in `_execute` + `_mc_http` helper
-- [x] `MC_BRIDGE_URL` env var in docker-compose brain service
-- [x] System prompt updated: Pepper knows to use MC tools when `mc_state` shows connected
+- [x] Simulator `/brain/log` endpoint — brain posts every tool call; shown live in Brain Log panel
+- [x] Browser MC HUD panel: position, health, food, game mode, nearby entities
+- [x] Browser Brain Log panel: real-time tool calls (orange = action, green = speech)
+- [x] Brain: MC state fetched from bridge every tick and injected into prompt
+- [x] Brain: hostile mob detection → `*** DANGER ***` flag triggers mc_attack
+- [x] Brain: survival knowledge in system prompt (wood→planks→tools, shelter, food, hostiles)
+- [x] Brain: reports actions in Chinese via speak()
+- [x] Tested end-to-end: Pepper gathers oak logs, flees skeletons, chats in Chinese
+- [x] M5Stack BLE shows mood in real-time while Pepper plays
 
-### To Do / Test
-- [ ] `cd minecraft && npm install` — install Mineflayer deps (package.json ready)
-- [ ] Verify Mineflayer supports Minecraft 26.1.x (new Mojang versioning) — may need `--version` pin
-- [ ] Start a local Minecraft Java server, connect from bridge, verify Pepper navigates
-- [ ] Update `/pepper` skill to include MC bridge startup step
-- [ ] Add `mc_place` tool to brain (bridge already has `/place`)
+### Server Setup (one-time)
+- Minecraft Java server: `data/server-1.21.4.jar`, Java 21 (`/opt/homebrew/opt/openjdk@21/bin/java`)
+- Server world lives in `data/world/` — do NOT delete (Pepper's progress is there)
+- `online-mode=false` in `data/server.properties` — allows Mineflayer to join without auth
+- Mineflayer does NOT support Minecraft 26.1.x (new Mojang versioning) — stay on 1.21.4
+
+### Daily Startup
+```bash
+# 1. Minecraft server (tmux minecraft:server)
+cd data && /opt/homebrew/opt/openjdk@21/bin/java -Xmx2G -jar server-1.21.4.jar --nogui
+
+# 2. Mineflayer bridge (tmux minecraft:0)
+cd minecraft && node bridge.js
+
+# 3. Docker services
+docker compose up -d
+
+# 4. Connect Pepper to the game
+curl -X POST http://localhost:18090/join -H "Content-Type: application/json" \
+  -d '{"host":"localhost","port":25565,"username":"Pepper"}'
+
+# 5. BLE (tmux ble-bridge)
+python ble_bridge/bridge.py
+
+# 6. Op yourself in MC server console
+op <your-username>
+```
+
+### Still To Do
+- [ ] Add `mc_place` brain tool (bridge already has `/place` endpoint)
+- [ ] Update `/pepper` Claude Code skill to include MC bridge startup
+- [ ] Shelter-building: teach Pepper to use mc_place to build a base before night
+- [ ] Crafting: Mineflayer can craft — add `mc_craft` tool so Pepper can make tools autonomously
 
 ### Startup (manual, bridge runs on host outside Docker)
 ```bash

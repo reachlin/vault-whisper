@@ -171,6 +171,15 @@
         <div id="mc-status">not in game</div>
         <button id="mc-btn" style="background:#5d9e22;">Join Minecraft</button>
       </div>
+
+      <div id="mc-hud" style="display:none;background:#161b22;border:1px solid #30363d;border-radius:6px;padding:10px 14px;font-size:0.78rem;min-width:200px;">
+        <div style="color:#f5a623;font-weight:bold;margin-bottom:6px;">MINECRAFT</div>
+        <div class="hud-row"><span>pos</span><span class="hud-val" id="mc-pos">—</span></div>
+        <div class="hud-row"><span>health</span><span class="hud-val" id="mc-health">—</span></div>
+        <div class="hud-row"><span>food</span><span class="hud-val" id="mc-food">—</span></div>
+        <div class="hud-row"><span>mode</span><span class="hud-val" id="mc-mode">—</span></div>
+        <div class="hud-row"><span>nearby</span><span class="hud-val" id="mc-nearby" style="max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">—</span></div>
+      </div>
     </div>
   </div>
 
@@ -184,8 +193,12 @@
     <button id="speak-btn">Send</button>
   </div>
 
+  <div id="brain-log" style="background:#161b22;border:1px solid #30363d;border-radius:6px;padding:8px 12px;width:100%;max-width:700px;height:120px;overflow-y:auto;font-size:0.75rem;color:#8b949e;">
+    <div style="color:#58a6ff;font-weight:bold;margin-bottom:4px;">BRAIN LOG</div>
+  </div>
+
   <div id="log"></div>
 
-  <script src="/static/app.js?v=5"></script>
+  <script src="/static/app.js?v=6"></script>
 </body>
 </html>
