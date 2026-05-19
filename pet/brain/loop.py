@@ -130,6 +130,37 @@ _TOOLS_SPEC = [
         "description": "Attack the nearest mob.",
         "parameters": {"type": "object", "properties": {}},
     },
+    {
+        "name": "mc_craft",
+        "description": (
+            "Craft an item by Minecraft item ID (e.g. oak_planks, stick, crafting_table, torch, "
+            "wooden_pickaxe, wooden_axe, stone_pickaxe, furnace). "
+            "Walks to a nearby crafting_table automatically for recipes that need one. "
+            "Returns updated inventory on success."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "item": {"type": "string"},
+                "count": {"type": "integer", "default": 1},
+            },
+            "required": ["item"],
+        },
+    },
+    {
+        "name": "mc_place",
+        "description": "Place a block from inventory at (x, y, z). Use to build shelter walls or place a crafting_table.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "block_type": {"type": "string"},
+                "x": {"type": "number"},
+                "y": {"type": "number"},
+                "z": {"type": "number"},
+            },
+            "required": ["block_type", "x", "y", "z"],
+        },
+    },
 ]
 
 _JS_HEAVY_DOMAINS = {
@@ -173,6 +204,13 @@ class SimulatorClient:
     async def get_last_transcript(self) -> str | None:
         r = await self._http.get("/hardware/last-transcript")
         return r.json().get("transcript")
+
+    async def get_directive(self) -> str:
+        try:
+            r = await self._http.get("/directive")
+            return r.json().get("directive", "")
+        except Exception:
+            return ""
 
     async def set_activity(self, activity: str) -> None:
         try:
@@ -240,13 +278,15 @@ class AgentLoop:
             self._last_transcript = new_transcript
             await self._sim.set_activity("received")
 
+        directive = await self._sim.get_directive() or self._directive.read()
+
         pet = state["pet"]
         self._pos_history.append((pet["x"], pet["y"]))
 
         # snapshot previous tick's actions before starting new ones
         self._last_actions = self._cur_actions
         self._cur_actions = []
-        messages = [{"role": "user", "content": self._build_user(state, new_transcript, frame, mc_state)}]
+        messages = [{"role": "user", "content": self._build_user(state, new_transcript, frame, mc_state, directive)}]
 
         await self._sim.set_activity("thinking")
         try:
@@ -260,7 +300,7 @@ class AgentLoop:
         finally:
             await self._sim.set_activity("idle")
 
-    def _build_user(self, state: dict, transcript: str | None, frame: str | None, mc_state: dict | None = None):
+    def _build_user(self, state: dict, transcript: str | None, frame: str | None, mc_state: dict | None = None, directive: str = ""):
         pet = state["pet"]
         cfg = state["config"]
 
@@ -293,26 +333,48 @@ class AgentLoop:
             entities = mc_state.get("nearby_entities", [])
             hostile_near = [e for e in entities if e.get("name", "").lower() in _hostile and e.get("distance", 99) < 8]
             entity_str = ", ".join(f"{e['name']}({e['distance']}m)" for e in entities[:5]) or "none"
-            inv = [f"{i['name']}x{i['count']}" for i in mc_state.get("inventory", [])[:6]]
+            inv = mc_state.get("inventory", [])
+            inv_str = ", ".join(f"{i['name']}x{i['count']}" for i in inv[:8]) or "empty"
             health = mc_state.get("health", 20)
+            tod = mc_state.get("time_of_day", 0)
+            if tod < 11000:
+                time_phase = f"day ({tod})"
+            elif tod < 13000:
+                time_phase = f"DUSK — shelter soon! ({tod})"
+            elif tod < 23000:
+                time_phase = f"NIGHT — stay inside! ({tod})"
+            else:
+                time_phase = f"dawn ({tod})"
+
+            inv_names = {i["name"] for i in inv}
+            if "oak_log" not in inv_names and "oak_planks" not in inv_names:
+                goal_hint = "→ mine oak_log first"
+            elif sum(i["count"] for i in inv if i["name"] == "stone") < 20:
+                goal_hint = "→ mine stone for tools"
+            elif sum(i["count"] for i in inv if "coal" in i["name"]) < 10:
+                goal_hint = "→ mine coal_ore for torches"
+            elif sum(i["count"] for i in inv if "iron" in i["name"]) < 10:
+                goal_hint = "→ mine iron_ore to progress"
+            else:
+                goal_hint = "→ well equipped, explore further"
+
             mc_text = (
-                f"\nMINECRAFT: You are in-game as {mc_state.get('username','Pepper')}. "
-                f"Position: ({p.get('x')},{p.get('y')},{p.get('z')}). "
+                f"\nMINECRAFT STATE — {mc_state.get('username','Pepper')} "
+                f"at ({p.get('x')},{p.get('y')},{p.get('z')}). "
                 f"Health: {health}/20. Food: {mc_state.get('food')}/20. "
-                f"Mode: {mc_state.get('game_mode')}. "
+                f"Time: {time_phase}. Mode: {mc_state.get('game_mode')}. "
                 f"Nearby: {entity_str}. "
-                f"Inventory: {', '.join(inv) or 'empty'}."
+                f"Inventory: {inv_str}. "
+                f"Goal hint: {goal_hint}."
             )
             if hostile_near:
                 names = ", ".join(f"{e['name']} ({e['distance']}m)" for e in hostile_near)
-                mc_text += f" *** DANGER: {names} nearby — use mc_attack NOW to fight back! ***"
+                mc_text += f" *** DANGER: {names} nearby — mc_attack or flee! ***"
             elif health <= 8:
-                mc_text += " *** LOW HEALTH — find shelter or flee! ***"
-            else:
-                mc_text += " Explore, gather wood with mc_mine, survive!"
+                mc_text += " *** LOW HEALTH — find shelter or flee NOW! ***"
             parts.append(mc_text)
 
-        parts.append(f"\nCURRENT DIRECTIVE:\n{self._directive.read()}")
+        parts.append(f"\nCURRENT DIRECTIVE:\n{directive or self._directive.read()}")
         parts.append("\nWhat do you do?")
 
         text = " ".join(parts)
@@ -401,6 +463,10 @@ class AgentLoop:
             label = f"mc_move → ({args.get('x')},{args.get('y')},{args.get('z')})"
         elif name == "mc_mine":
             label = f"mc_mine: {args.get('block_type')}"
+        elif name == "mc_craft":
+            label = f"mc_craft: {args.get('item')}x{args.get('count',1)}"
+        elif name == "mc_place":
+            label = f"mc_place: {args.get('block_type')} at ({args.get('x')},{args.get('y')},{args.get('z')})"
         elif name == "mc_chat":
             label = f'mc_chat: "{args.get("text","")[:50]}"'
         elif name == "search":
@@ -459,6 +525,17 @@ class AgentLoop:
             if name == "mc_attack":
                 result = await self._mc_http("POST", "/attack", {})
                 self._cur_actions.append("MC attacked mob")
+                return result
+            if name == "mc_craft":
+                result = await self._mc_http("POST", "/craft", {"item": args["item"], "count": args.get("count", 1)})
+                self._cur_actions.append(f"MC craft {args['item']}x{args.get('count',1)}")
+                return result
+            if name == "mc_place":
+                result = await self._mc_http("POST", "/place", {
+                    "block_type": args["block_type"],
+                    "x": args["x"], "y": args["y"], "z": args["z"],
+                })
+                self._cur_actions.append(f"MC place {args['block_type']} at ({args['x']},{args['y']},{args['z']})")
                 return result
         except Exception as e:
             log.error("tool %s failed: %s", name, e)

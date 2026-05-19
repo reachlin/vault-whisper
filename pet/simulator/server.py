@@ -17,6 +17,47 @@ connections: list[WebSocket] = []
 minecraft_server: str | None = None   # "host:port" when connected, None otherwise
 minecraft_state: dict = {}            # last state snapshot pushed from Mineflayer bridge
 
+_DEFAULT_DIRECTIVE = (
+    "Explore the grid actively — move every tick unless you have a strong reason to stay.\n"
+    "Only speak when something genuinely interesting happens or when the human says something new.\n"
+    "Do not greet unless you haven't spoken in a long time.\n"
+    "Save meaningful moments to memory. Stay curious — notice details in what you see."
+)
+
+_MINECRAFT_DIRECTIVE = """MINECRAFT MODE — SURVIVAL STRATEGY
+
+You are in Minecraft survival. Think across ticks — remember your goal and pursue it.
+
+PRIORITY ORDER (check top-down each tick):
+1. DANGER: hostile mobs within 8m AND health < 15 → mc_attack or flee with mc_move
+2. NIGHT: time_of_day > 11000 → stop all gathering, find or build shelter NOW
+3. FOOD: food < 12 → hunt nearby animals (chicken, cow, pig) with mc_attack
+4. TOOL PROGRESSION (check inventory, do steps in order):
+   a. No oak_planks: mc_mine oak_log (get 12+), then mc_craft oak_planks
+   b. No crafting_table: mc_craft crafting_table, then mc_place it at your feet (y+0)
+   c. No wooden_pickaxe: mc_craft wooden_pickaxe (needs crafting_table placed nearby)
+   d. Stone < 20: mc_mine stone
+   e. Coal < 10: mc_mine coal_ore, then mc_craft torch (get 8+)
+   f. No stone_pickaxe: mc_craft stone_pickaxe
+   g. Iron < 10: mc_mine iron_ore
+
+EVERY TICK:
+- Call mc_state() to read inventory, health, food, time_of_day, and nearby entities
+- Decide which priority applies based on what you see
+- Act with mc_mine, mc_craft, mc_place, mc_attack, or mc_move
+- After completing a step: remember("current goal: <next step>")
+- First tick of a session: recall() to restore your previous goal
+
+TIME OF DAY:
+- 0–11000: daytime — gather and craft aggressively
+- 11000–13000: dusk — head to shelter or dig into a hillside NOW
+- 13000–23000: night — stay inside; attack anything that gets in
+- 23000+: dawn — safe to go out
+
+COMMUNICATE: mc_chat() for major actions (in Chinese). speak() for thoughts."""
+
+current_directive: str = _DEFAULT_DIRECTIVE
+
 _static = Path(__file__).parent / "static"
 
 
@@ -82,6 +123,10 @@ class MinecraftStateRequest(BaseModel):
     nearby_entities: list | None = None
     nearby_blocks: dict | None = None
     inventory: list | None = None
+
+
+class DirectiveRequest(BaseModel):
+    text: str
 
 
 # --- helpers ---
@@ -173,6 +218,18 @@ async def speak(req: SpeakRequest):
     return {"text": req.text}
 
 
+@app.get("/directive")
+def get_directive():
+    return {"directive": current_directive}
+
+
+@app.post("/directive")
+async def set_directive(req: DirectiveRequest):
+    global current_directive
+    current_directive = req.text
+    return {"ok": True}
+
+
 @app.get("/minecraft/status")
 def minecraft_status():
     return {"connected": minecraft_server is not None, "server": minecraft_server}
@@ -180,16 +237,18 @@ def minecraft_status():
 
 @app.post("/minecraft/join")
 async def minecraft_join(req: MinecraftJoinRequest):
-    global minecraft_server
+    global minecraft_server, current_directive
     minecraft_server = f"{req.host}:{req.port}"
+    current_directive = _MINECRAFT_DIRECTIVE
     await broadcast({"type": "minecraft", "connected": True, "server": minecraft_server})
     return {"ok": True, "server": minecraft_server}
 
 
 @app.post("/minecraft/leave")
 async def minecraft_leave():
-    global minecraft_server
+    global minecraft_server, current_directive
     minecraft_server = None
+    current_directive = _DEFAULT_DIRECTIVE
     await broadcast({"type": "minecraft", "connected": False, "server": None})
     return {"ok": True}
 

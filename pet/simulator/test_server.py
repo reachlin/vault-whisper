@@ -12,6 +12,9 @@ def reset_state():
     srv.last_transcript = None
     srv.pet_activity = "idle"
     srv.connections.clear()
+    srv.current_directive = srv._DEFAULT_DIRECTIVE
+    srv.minecraft_server = None
+    srv.minecraft_state = {}
 
 
 @pytest.fixture
@@ -132,3 +135,32 @@ def test_websocket_sends_initial_state(client):
         assert msg["type"] == "state"
         assert "pet" in msg["data"]
         assert "config" in msg["data"]
+
+
+# --- directive ---
+
+def test_directive_returns_default(client):
+    r = client.get("/directive")
+    assert r.status_code == 200
+    assert "directive" in r.json()
+    assert len(r.json()["directive"]) > 10
+
+
+def test_directive_set_and_get(client):
+    client.post("/directive", json={"text": "Go north and find diamonds."})
+    r = client.get("/directive")
+    assert r.json()["directive"] == "Go north and find diamonds."
+
+
+def test_minecraft_join_switches_to_mc_directive(client):
+    client.post("/minecraft/join", json={"host": "localhost", "port": 25565})
+    r = client.get("/directive")
+    assert "MINECRAFT" in r.json()["directive"]
+
+
+def test_minecraft_leave_restores_default_directive(client):
+    client.post("/minecraft/join", json={"host": "localhost", "port": 25565})
+    client.post("/minecraft/leave")
+    r = client.get("/directive")
+    assert "MINECRAFT" not in r.json()["directive"]
+    assert r.json()["directive"] == srv._DEFAULT_DIRECTIVE

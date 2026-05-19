@@ -221,6 +221,44 @@ app.post('/attack', (req, res) => {
   res.json({ ok: true, attacked: target.name, distance: Math.round(target.position.distanceTo(bot.entity.position)) });
 });
 
+app.post('/craft', async (req, res) => {
+  if (!bot) return res.json({ error: 'not connected' });
+  const { item, count = 1 } = req.body;
+  const itemData = bot.registry.itemsByName[item];
+  if (!itemData) return res.json({ error: `unknown item: "${item}" — use Minecraft item IDs like oak_planks, torch, wooden_pickaxe` });
+
+  // Try hand-crafting (no table needed) first
+  let recipes = bot.recipesFor(itemData.id, null, 1, null);
+  let craftingTable = null;
+
+  if (!recipes.length) {
+    craftingTable = bot.findBlock({
+      matching: bot.registry.blocksByName['crafting_table']?.id,
+      maxDistance: 32,
+    });
+    if (!craftingTable) {
+      return res.json({ error: `no recipe for "${item}" without a crafting table — place one first with mc_place` });
+    }
+    recipes = bot.recipesFor(itemData.id, null, 1, craftingTable);
+    if (!recipes.length) {
+      return res.json({ error: `no recipe found for "${item}" — check you have the right materials` });
+    }
+  }
+
+  try {
+    if (craftingTable) {
+      await bot.pathfinder.goto(new goals.GoalBlock(
+        craftingTable.position.x, craftingTable.position.y, craftingTable.position.z
+      ));
+    }
+    await bot.craft(recipes[0], count, craftingTable);
+    const inv = bot.inventory.items().map(i => ({ name: i.name, count: i.count }));
+    res.json({ ok: true, crafted: item, count, inventory: inv });
+  } catch (err) {
+    res.json({ error: err.message });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`[bridge] Pepper Minecraft bridge listening on :${PORT}`);
   console.log(`[bridge] Simulator URL: ${SIMULATOR_URL}`);
