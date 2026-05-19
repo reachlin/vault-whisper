@@ -185,27 +185,39 @@ simulator UI  —  MC HUD panel (pos/health/food/nearby) + Brain Log panel
 - `online-mode=false` in `data/server.properties` — allows Mineflayer to join without auth
 - Mineflayer does NOT support Minecraft 26.1.x (new Mojang versioning) — stay on 1.21.4
 
-### Daily Startup
+### Startup
+
+**Full stack (Minecraft included):**
 ```bash
-# 1. Minecraft server (tmux minecraft:server)
-cd data && /opt/homebrew/opt/openjdk@21/bin/java -Xmx2G -jar server-1.21.4.jar --nogui
-
-# 2. Mineflayer bridge (tmux minecraft:0)
-cd minecraft && node bridge.js
-
-# 3. Docker services
-docker compose up -d
-
-# 4. Connect Pepper to the game
-curl -X POST http://localhost:18090/join -H "Content-Type: application/json" \
-  -d '{"host":"localhost","port":25565,"username":"Pepper"}'
-
-# 5. BLE (tmux ble-bridge)
-python ble_bridge/bridge.py
-
-# 6. Op yourself in MC server console
-op <your-username>
+make up-mc   # starts simulator + brain + mcserver + mcbridge
 ```
+Then connect Pepper and op yourself:
+```bash
+# connect Pepper bot to the server
+curl -X POST http://localhost:18090/join \
+  -H "Content-Type: application/json" \
+  -d '{"host":"mcserver","port":25565,"username":"Pepper"}'
+
+# op yourself (replace with your MC username)
+docker compose exec mcserver sh -c 'echo "op <username>" | java -jar /mc/server-1.21.4.jar --nogui' 2>/dev/null || true
+# easier: attach to the mcserver container console and type: op <username>
+docker compose attach mcserver
+```
+
+**Pet only (no Minecraft):**
+```bash
+make up      # starts simulator + brain only
+```
+
+**BLE (M5Stack, always on host):**
+```bash
+python ble_bridge/bridge.py   # run in tmux ble-bridge
+```
+
+**Docker Compose profiles explained:**
+- Services with no profile (`simulator`, `brain`, `test`) start with plain `docker compose up`
+- Services tagged `profiles: [minecraft]` (`mcserver`, `mcbridge`) are skipped unless `--profile minecraft` is passed
+- `make up-mc` passes `--profile minecraft` automatically
 
 ### Still To Do
 - [ ] Add `mc_place` brain tool (bridge already has `/place` endpoint)
