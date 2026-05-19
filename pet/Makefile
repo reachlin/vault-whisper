@@ -1,4 +1,4 @@
-.PHONY: test build simulator brain up down logs shell
+.PHONY: test build simulator brain up up-mc down logs shell
 
 test:
 	docker compose run --rm test
@@ -15,8 +15,11 @@ brain:
 up:
 	docker compose up simulator brain
 
+up-mc:
+	docker compose --profile minecraft up simulator brain mcserver mcbridge
+
 down:
-	docker compose down
+	docker compose down --remove-orphans
 
 logs:
 	docker compose logs -f

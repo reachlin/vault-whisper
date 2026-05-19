@@ -26,7 +26,37 @@ services:
         required: false
     environment:
       - SIMULATOR_URL=http://simulator:18080
-      - MC_BRIDGE_URL=http://host.docker.internal:18090
+      - MC_BRIDGE_URL=http://mcbridge:18090
+
+  mcserver:
+    build:
+      context: .
+      dockerfile: docker/mcserver.Dockerfile
+    restart: unless-stopped
+    ports:
+      - "25565:25565"
+    volumes:
+      - ./data:/mc   # world, server.jar, server.properties all live here
+    profiles:
+      - minecraft
+
+  mcbridge:
+    image: node:22-alpine
+    restart: unless-stopped
+    working_dir: /app
+    command: node bridge.js
+    volumes:
+      - ./minecraft:/app
+    environment:
+      - MC_BRIDGE_PORT=18090
+      - SIMULATOR_URL=http://simulator:18080
+    ports:
+      - "18090:18090"
+    depends_on:
+      - simulator
+      - mcserver
+    profiles:
+      - minecraft
 
   test:
     build:
