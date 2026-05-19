@@ -1,13 +1,18 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
 import json
+import os
 
+import httpx
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from simulator.grid import Grid, Direction
+
+_MC_BRIDGE_URL = os.environ.get("MC_BRIDGE_URL", "http://mcbridge:18090")
+_bridge_http = httpx.AsyncClient(base_url=_MC_BRIDGE_URL, timeout=10.0)
 
 grid = Grid()
 last_frame: str | None = None
@@ -238,6 +243,15 @@ def minecraft_status():
 @app.post("/minecraft/join")
 async def minecraft_join(req: MinecraftJoinRequest):
     global minecraft_server, current_directive
+    try:
+        r = await _bridge_http.post("/join", json={
+            "host": req.host, "port": req.port, "username": "Pepper"
+        })
+        data = r.json()
+        if "error" in data:
+            return {"ok": False, "error": data["error"]}
+    except Exception as e:
+        return {"ok": False, "error": f"bridge unreachable: {e}"}
     minecraft_server = f"{req.host}:{req.port}"
     current_directive = _MINECRAFT_DIRECTIVE
     await broadcast({"type": "minecraft", "connected": True, "server": minecraft_server})
@@ -247,6 +261,10 @@ async def minecraft_join(req: MinecraftJoinRequest):
 @app.post("/minecraft/leave")
 async def minecraft_leave():
     global minecraft_server, current_directive
+    try:
+        await _bridge_http.post("/leave")
+    except Exception:
+        pass
     minecraft_server = None
     current_directive = _DEFAULT_DIRECTIVE
     await broadcast({"type": "minecraft", "connected": False, "server": None})

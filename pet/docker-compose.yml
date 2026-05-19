@@ -13,6 +13,7 @@ services:
         required: false
     environment:
       - PET_MOCK_HARDWARE=true
+      - MC_BRIDGE_URL=http://mcbridge:18090
 
   brain:
     build:
@@ -35,6 +36,7 @@ services:
     restart: unless-stopped
     ports:
       - "25565:25565"
+      - "25575:25575"
     volumes:
       - ./data:/mc   # world, server.jar, server.properties all live here
     profiles:

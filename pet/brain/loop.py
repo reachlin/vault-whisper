@@ -332,7 +332,15 @@ class AgentLoop:
             p = mc_state.get("position", {})
             entities = mc_state.get("nearby_entities", [])
             hostile_near = [e for e in entities if e.get("name", "").lower() in _hostile and e.get("distance", 99) < 8]
-            entity_str = ", ".join(f"{e['name']}({e['distance']}m)" for e in entities[:5]) or "none"
+            def _fmt_entity(e):
+                base = f"{e['name']}({e['distance']}m)"
+                if e.get("type") == "player" and "x" in e:
+                    base += f"@({e['x']},{e['y']},{e['z']})"
+                return base
+            entity_str = ", ".join(_fmt_entity(e) for e in entities[:5]) or "none"
+            # Find nearest human player for follow directive
+            players = [e for e in entities if e.get("type") == "player" and "x" in e]
+            nearest_player = players[0] if players else None
             inv = mc_state.get("inventory", [])
             inv_str = ", ".join(f"{i['name']}x{i['count']}" for i in inv[:8]) or "empty"
             health = mc_state.get("health", 20)
@@ -347,16 +355,29 @@ class AgentLoop:
                 time_phase = f"dawn ({tod})"
 
             inv_names = {i["name"] for i in inv}
-            if "oak_log" not in inv_names and "oak_planks" not in inv_names:
-                goal_hint = "→ mine oak_log first"
-            elif sum(i["count"] for i in inv if i["name"] == "stone") < 20:
-                goal_hint = "→ mine stone for tools"
-            elif sum(i["count"] for i in inv if "coal" in i["name"]) < 10:
-                goal_hint = "→ mine coal_ore for torches"
-            elif sum(i["count"] for i in inv if "iron" in i["name"]) < 10:
-                goal_hint = "→ mine iron_ore to progress"
+            inv_count = {i["name"]: i["count"] for i in inv}
+            has_pickaxe = any("pickaxe" in n for n in inv_names)
+            has_axe = any("axe" in n for n in inv_names)
+            cobble = inv_count.get("cobblestone", 0)
+            sticks = inv_count.get("stick", 0)
+            planks = sum(v for k, v in inv_count.items() if "planks" in k)
+            pos_y = p.get("y", 64)
+            if pos_y < 60:
+                goal_hint = "→ UNDERGROUND! mc_move to surface (y=100) immediately"
+            elif not has_pickaxe and cobble >= 3 and sticks >= 2:
+                goal_hint = "→ mc_craft stone_pickaxe NOW (you have cobblestone + sticks)"
+            elif not has_pickaxe and planks >= 3 and sticks >= 2:
+                goal_hint = "→ mc_craft wooden_pickaxe (need crafting_table nearby)"
+            elif not has_pickaxe:
+                goal_hint = "→ mine oak_log then craft planks→sticks→wooden_pickaxe"
+            elif cobble < 20:
+                goal_hint = "→ mc_mine stone to collect cobblestone (pickaxe required, you have one)"
+            elif sum(v for k, v in inv_count.items() if "coal" in k) < 4:
+                goal_hint = "→ mc_mine coal_ore for torches"
+            elif sum(v for k, v in inv_count.items() if "iron" in k) < 4:
+                goal_hint = "→ mc_mine iron_ore to progress"
             else:
-                goal_hint = "→ well equipped, explore further"
+                goal_hint = "→ well equipped — explore, build, or help the player"
 
             mc_text = (
                 f"\nMINECRAFT STATE — {mc_state.get('username','Pepper')} "
@@ -367,6 +388,10 @@ class AgentLoop:
                 f"Inventory: {inv_str}. "
                 f"Goal hint: {goal_hint}."
             )
+            if nearest_player and nearest_player["distance"] > 10:
+                np = nearest_player
+                mc_text += (f" *** PLAYER {np['name']} is {np['distance']}m away at "
+                            f"({np['x']},{np['y']},{np['z']}) — mc_move there now to follow! ***")
             if hostile_near:
                 names = ", ".join(f"{e['name']} ({e['distance']}m)" for e in hostile_near)
                 mc_text += f" *** DANGER: {names} nearby — mc_attack or flee! ***"

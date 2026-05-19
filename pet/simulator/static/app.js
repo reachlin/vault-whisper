@@ -404,7 +404,7 @@ mcBtn.addEventListener('click', async () => {
     }
     return;
   }
-  const raw = prompt('Minecraft server address:', 'localhost:25565');
+  const raw = prompt('Minecraft server address:', 'mcserver:25565');
   if (!raw) return;
   const [host, portStr] = raw.includes(':') ? raw.split(':') : [raw, '25565'];
   const port = parseInt(portStr) || 25565;
