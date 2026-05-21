@@ -251,6 +251,8 @@ class AgentLoop:
         self._last_spoken: str | None = None       # last thing Pepper said
         self._pos_history: deque[tuple] = deque(maxlen=6)  # recent positions
 
+        self._vision = os.environ.get("PET_VISION", "true").lower() != "false"
+
         if provider in ("openai", "openai_compatible"):
             from openai import AsyncOpenAI
             self._oai = AsyncOpenAI(
@@ -403,7 +405,7 @@ class AgentLoop:
         parts.append("\nWhat do you do?")
 
         text = " ".join(parts)
-        if not frame:
+        if not frame or not self._vision:
             return text
 
         if self._provider in ("openai", "openai_compatible"):

@@ -1,4 +1,4 @@
-.PHONY: test build simulator brain up up-mc down logs shell
+.PHONY: test build simulator brain up up-mc ollama down logs shell
 
 test:
 	docker compose run --rm test
@@ -17,6 +17,9 @@ up:
 
 up-mc:
 	docker compose --profile minecraft up simulator brain mcserver mcbridge
+
+ollama:
+	brew services start ollama
 
 down:
 	docker compose down --remove-orphans

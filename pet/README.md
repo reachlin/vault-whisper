@@ -32,6 +32,7 @@ Simulator ←WebSocket→ BLE Bridge (host) ←BLE→ M5Stack StickC Plus
 | Tool | Purpose |
 |------|---------|
 | `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` | Brain loop AI calls |
+| Ollama (optional, macOS) | Local LLM inference via Metal GPU — `brew install ollama` |
 
 **For M5Stack physical display (optional):**
 
@@ -166,6 +167,23 @@ PET_PROVIDER=openai_compatible  # any OpenAI-compatible endpoint
 PET_MODEL=claude-opus-4-7    # override model
 ```
 
+**Local Ollama inference (macOS, Metal GPU, ~1–3s latency):**
+
+```bash
+# 1. Install and start Ollama natively (uses Metal GPU — much faster than Docker)
+brew install ollama
+brew services start ollama   # or: make ollama
+ollama pull qwen2.5:7b       # ~4.7 GB, one-time download
+
+# 2. Set in .env:
+PET_PROVIDER=openai_compatible
+PET_BASE_URL=http://host.docker.internal:11434/v1
+PET_MODEL=qwen2.5:7b
+PET_VISION=false             # qwen2.5:7b is text-only
+```
+
+> **Why native?** Docker on Mac runs inside a Linux VM with no Metal GPU access, making inference 100–300× slower. Running Ollama natively lets the brain container reach it via `host.docker.internal`.
+
 ---
 
 ## MCP Tools (Claude Code mode)
@@ -179,6 +197,61 @@ PET_MODEL=claude-opus-4-7    # override model
 | `pet_set_mood(mood)` | Change mood |
 | `pet_remember(note, mood)` | Save a memory to `data/memory.md` |
 | `pet_recall(n)` | Read the last `n` memories (default 10) |
+
+---
+
+## Minecraft Mode
+
+Pepper can join your Minecraft server and play alongside you — mining, crafting, building, and following you around. She is permanently invincible and narrates her actions in Chinese.
+
+### Prerequisites
+
+- Java 21+ installed on the host
+- A Minecraft Java Edition client to play as the human player
+
+### Start
+
+```bash
+# 1. Start the Minecraft server + bridge + brain
+make up-mc
+# or: docker compose --profile minecraft up
+
+# 2. Connect your Minecraft client to localhost:25565
+# 3. Click "Join Minecraft" in the simulator UI (http://localhost:18080)
+#    Pepper will connect and greet you
+```
+
+### What Pepper does
+
+| Behavior | Detail |
+|----------|--------|
+| **Follows you** | Moves to your coordinates whenever you're >10 blocks away |
+| **Mines** | `mc_mine("oak_log")`, `mc_mine("stone")`, etc. |
+| **Crafts** | Full progression: logs → planks → sticks → crafting table → pickaxe |
+| **Builds** | `mc_place("block_type", x, y, z)` |
+| **Attacks** | `mc_attack()` hits nearest mob |
+| **Invincible** | Permanent resistance + saturation effects via RCON on join |
+
+### Key settings (`data/server.properties`)
+
+| Property | Value | Reason |
+|----------|-------|--------|
+| `gamemode=survival` | survival | Items drop normally; creative mode breaks `bot.dig()` |
+| `enable-rcon=true` | true | Lets the bridge apply invincibility effects |
+| `rcon.password` | pepper123 | Change if exposing to internet |
+| `online-mode=false` | false | Allows local connections without a Mojang account |
+
+### Minecraft tools (brain headless mode)
+
+| Tool | Description |
+|------|-------------|
+| `mc_state()` | Connected status, position, inventory, nearby entities |
+| `mc_move(x, y, z)` | Pathfind to coordinates |
+| `mc_mine("block")` | Find and dig the nearest matching block |
+| `mc_craft("item", count)` | Craft by item ID; walks to crafting table automatically |
+| `mc_place("block", x, y, z)` | Place a block from inventory |
+| `mc_attack()` | Hit the nearest mob |
+| `mc_chat("text")` | Send a chat message in-game |
 
 ---
 
@@ -318,6 +391,9 @@ pet/
 - [x] Activity ring animation in browser (idle / thinking / browsing / talking / moving)
 - [x] Overseer loop — long-term goal directives
 - [x] M5Stack StickC Plus physical display with animated face + BLE bridge
+- [x] Minecraft integration — mine, craft, build, follow player, invincibility via RCON
+- [x] Local LLM inference via native Ollama (Metal GPU, ~1–3s latency)
+- [ ] Fine-tune a small model on Pepper's gameplay logs for sub-second Minecraft reactions
 - [ ] Emotion decay over time
 - [ ] Obstacles and furniture in the grid
 - [ ] Wake-word detection ("Hey Pepper")
