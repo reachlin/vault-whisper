@@ -1,6 +1,5 @@
-#include <M5StickCPlus.h>
+#include <M5Unified.h>
 #include <ArduinoJson.h>
-#include <driver/i2s.h>
 #include "ble_bridge.h"
 
 // Portrait: 135×240
@@ -10,7 +9,7 @@ static const int FACE_R     = 40;
 static const int RING_INNER = 52;
 static const int RING_OUTER = 58;
 
-TFT_eSprite spr = TFT_eSprite(&M5.Lcd);
+M5Canvas spr(&M5.Display);
 
 static char g_mood[24]     = "neutral";
 static char g_activity[24] = "idle";
@@ -27,14 +26,65 @@ static const uint16_t PIP_MED    = 0x0560;   // #00AC00  mid phosphor
 static const uint16_t PIP_DIM    = 0x01A0;   // #003500  scan-line tint
 static const uint16_t PIP_BG     = 0x0060;   // #001800  face fill
 
-// ── I2S audio (Hat SPK2 / MAX98357) ──────────────────────────────────────────
-#define I2S_PORT   I2S_NUM_0
-#define I2S_BCLK   GPIO_NUM_26
-#define I2S_LRCLK  GPIO_NUM_0    // boot-strapping pin; fine after boot
-#define I2S_DOUT   GPIO_NUM_25
+// ── Audio backend ─────────────────────────────────────────────────────────────
+#ifndef AUDIO_RATE
 #define AUDIO_RATE 8000
+#endif
 
-static void initI2S() {
+#ifdef M5STICK_S3
+
+// S3: ES8311 internal speaker via M5Unified.
+// Cross-core buffer problem: Core 1 (Arduino loop) writes PCM through its
+// write-back D-cache; Core 0 (Speaker task) reads the same address and may
+// see stale data if Core 1's dirty lines haven't been written back to SRAM.
+// Fix: call Cache_WriteBack_Addr() before handing the buffer to playRaw().
+// This applies to both PSRAM and internal SRAM on ESP32-S3.
+#include <esp_heap_caps.h>
+#include <esp32s3/rom/cache.h>
+static int16_t* g_pcmBuf = nullptr;
+static size_t   g_pcmCap = 0;
+static size_t   g_pcmLen = 0;
+
+static void initAudio() {
+    M5.Speaker.setVolume(255);
+    M5.Speaker.tone(1000, 300);
+    // 5 s of mono audio.  Try internal SRAM first (smaller, but no PSRAM alloc
+    // overhead); fall back to default heap (PSRAM on S3) if it doesn't fit.
+    g_pcmCap = (size_t)AUDIO_RATE * 5;
+    g_pcmBuf = (int16_t*)heap_caps_malloc(g_pcmCap * sizeof(int16_t),
+                                           MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    if (!g_pcmBuf) {
+        g_pcmBuf = (int16_t*)malloc(g_pcmCap * sizeof(int16_t));
+    }
+}
+
+static void appendAudio(const uint8_t* src, uint16_t n) {
+    const int16_t* s16 = (const int16_t*)src;
+    size_t mono = n / 2;
+    if (g_pcmBuf && g_pcmLen + mono <= g_pcmCap)
+        memcpy(g_pcmBuf + g_pcmLen, s16, mono * sizeof(int16_t)), g_pcmLen += mono;
+}
+
+static void flushAudio() {
+    if (!g_pcmBuf || g_pcmLen == 0) return;
+    // Flush Core 1's dirty D-cache lines to backing store before Core 0 reads.
+    Cache_WriteBack_Addr((uint32_t)g_pcmBuf, g_pcmLen * sizeof(int16_t));
+    M5.Speaker.playRaw(g_pcmBuf, g_pcmLen, AUDIO_RATE, false, 1, 0, true);
+    g_pcmLen = 0;
+}
+
+static void silenceAudio() { M5.Speaker.stop(); g_pcmLen = 0; }
+
+#else
+
+// Plus: Hat SPK2 (MAX98357A) via raw I2S.
+#include <driver/i2s.h>
+#define I2S_PORT  I2S_NUM_0
+#define I2S_BCLK  GPIO_NUM_26
+#define I2S_LRCLK GPIO_NUM_0
+#define I2S_DOUT  GPIO_NUM_25
+
+static void initAudio() {
     i2s_config_t cfg = {};
     cfg.mode                 = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX);
     cfg.sample_rate          = AUDIO_RATE;
@@ -43,11 +93,12 @@ static void initI2S() {
     cfg.communication_format = I2S_COMM_FORMAT_STAND_I2S;
     cfg.intr_alloc_flags     = ESP_INTR_FLAG_LEVEL1;
     cfg.dma_buf_count        = 8;
-    cfg.dma_buf_len          = 512;   // 4 KB total — ~64 ms headroom at 16 kHz 16-bit
+    cfg.dma_buf_len          = 512;
     cfg.use_apll             = false;
     cfg.tx_desc_auto_clear   = true;
     i2s_driver_install(I2S_PORT, &cfg, 0, nullptr);
     i2s_pin_config_t pins = {};
+    pins.mck_io_num   = I2S_PIN_NO_CHANGE;
     pins.bck_io_num   = I2S_BCLK;
     pins.ws_io_num    = I2S_LRCLK;
     pins.data_out_num = I2S_DOUT;
@@ -56,11 +107,15 @@ static void initI2S() {
     i2s_zero_dma_buffer(I2S_PORT);
 }
 
-static void writeAudioChunk(const uint8_t* src, uint16_t n) {
-    // n is byte count (even); data is signed 16-bit LE — write directly to I2S
+static void appendAudio(const uint8_t* src, uint16_t n) {
     size_t written;
     i2s_write(I2S_PORT, src, n, &written, portMAX_DELAY);
 }
+
+static void flushAudio()  { i2s_zero_dma_buffer(I2S_PORT); }
+static void silenceAudio(){ i2s_zero_dma_buffer(I2S_PORT); }
+
+#endif
 
 // ── Activity ring ─────────────────────────────────────────────────────────────
 
@@ -312,10 +367,40 @@ static void drawSleepScreen(uint32_t t) {
     spr.pushSprite(0, 0);
 }
 
+// ── Passkey screen ───────────────────────────────────────────────────────────
+
+static void drawPasskeyScreen(uint32_t pk) {
+    char top[4], bot[4];
+    snprintf(top, sizeof(top), "%03lu", (unsigned long)(pk / 1000));
+    snprintf(bot, sizeof(bot), "%03lu", (unsigned long)(pk % 1000));
+
+    spr.fillSprite(TFT_BLACK);
+
+    spr.setTextFont(1);
+    spr.setTextColor(PIP_MED, TFT_BLACK);
+    spr.setTextDatum(TC_DATUM);
+    spr.drawString("PAIRING CODE", CX, 10);
+    spr.drawFastHLine(8, 22, W - 16, PIP_DIM);
+
+    // Two rows of 3 digits — font 7 is ~24px/char, 3 chars = 72px fits 135px screen
+    spr.setTextFont(7);
+    spr.setTextColor(PIP_BRIGHT, TFT_BLACK);
+    spr.setTextDatum(MC_DATUM);
+    spr.drawString(top, CX, CY - 30);
+    spr.drawString(bot, CX, CY + 30);
+
+    spr.setTextFont(1);
+    spr.setTextColor(PIP_DIM, TFT_BLACK);
+    spr.setTextDatum(BC_DATUM);
+    spr.drawString("TYPE ON HOST", CX, H - 5);
+
+    spr.pushSprite(0, 0);
+}
+
 // ── BLE receive — state machine ───────────────────────────────────────────────
 // '{' ... '\n'                   → JSON display/state update
-// 0xAA + uint16_le + int16_le[] → PCM audio chunk (8 kHz, 16-bit signed LE)
-// 0xAA + 0x00 0x00              → end of audio
+// 0xAA + uint16_le + int16_le[] → PCM audio chunk (AUDIO_RATE Hz, 16-bit signed LE)
+// 0xAA + 0x00 0x00              → end of audio (Plus: silence; S3: play accumulated)
 
 enum BleState : uint8_t { BS_IDLE, BS_JSON, BS_AUDIO_SZ_LO, BS_AUDIO_SZ_HI, BS_AUDIO_DATA };
 static BleState bsState  = BS_IDLE;
@@ -323,7 +408,7 @@ static char     bleBuf[512] = {};
 static int      bleLen   = 0;
 static uint16_t audioSz  = 0;
 static uint16_t audioPos = 0;
-static uint8_t  audioBuf[256] = {};
+static uint8_t  audioBuf[512] = {};
 
 static void parseLine(const char* s) {
     JsonDocument doc;
@@ -356,14 +441,14 @@ static void pollBle() {
         case BS_AUDIO_SZ_HI:
             audioSz |= (uint16_t)b << 8;
             audioPos = 0;
-            if (audioSz == 0) { i2s_zero_dma_buffer(I2S_PORT); bsState = BS_IDLE; }
-            else                 bsState = BS_AUDIO_DATA;
+            if (audioSz == 0) { flushAudio(); bsState = BS_IDLE; }
+            else               bsState = BS_AUDIO_DATA;
             break;
         case BS_AUDIO_DATA:
             if (audioPos < sizeof(audioBuf)) audioBuf[audioPos] = b;
             audioPos++;
             if (audioPos >= audioSz) {
-                writeAudioChunk(audioBuf, min(audioSz, (uint16_t)sizeof(audioBuf)));
+                appendAudio(audioBuf, min(audioSz, (uint16_t)sizeof(audioBuf)));
                 bsState = BS_IDLE;
             }
             break;
@@ -374,14 +459,18 @@ static void pollBle() {
 // ── Arduino entry ─────────────────────────────────────────────────────────────
 
 void setup() {
-    M5.begin();
-    M5.Lcd.setRotation(0);
-    M5.Axp.ScreenBreath(80);
+    auto cfg = M5.config();
+    // M5StickS3 isn't auto-detected from the ESP32-S3-PICO-1 eFuse alone;
+    // set fallback so M5Unified configures the display and power IC correctly.
+    cfg.fallback_board = m5::board_t::board_M5StickS3;
+    M5.begin(cfg);
+    M5.Display.setRotation(0);
+    M5.Display.setBrightness(80);
 
     spr.setColorDepth(16);
     spr.createSprite(W, H);
 
-    initI2S();
+    initAudio();
 
     char name[20];
     uint8_t mac[6] = {};
@@ -402,16 +491,22 @@ void loop() {
 
     if (connected && !wasConnected) {
         // just reconnected — restore brightness and reset state
-        M5.Axp.ScreenBreath(80);
+        M5.Display.setBrightness(80);
         strlcpy(g_activity, "idle",    sizeof(g_activity));
         strlcpy(g_mood,     "neutral", sizeof(g_mood));
         uiMode = MODE_FACE;
     } else if (!connected && wasConnected) {
         // just disconnected — dim screen and silence speaker
-        M5.Axp.ScreenBreath(20);
-        i2s_zero_dma_buffer(I2S_PORT);
+        M5.Display.setBrightness(20);
+        silenceAudio();
     }
     wasConnected = connected;
+
+    // Passkey must be shown regardless of connection state — onPassKeyNotify
+    // fires while connected (mid-stream security upgrade) and is cleared by
+    // onDisconnect before we'd see it in the !connected branch.
+    uint32_t pk = blePasskey();
+    if (pk) { drawPasskeyScreen(pk); delay(30); return; }
 
     if (!connected) {
         drawSleepScreen(t);

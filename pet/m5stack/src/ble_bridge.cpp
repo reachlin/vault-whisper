@@ -54,7 +54,9 @@ class ServerCallbacks : public BLEServerCallbacks {
   void onDisconnect(BLEServer* s) override {
     connected = false;
     secure = false;
-    passkey = 0;
+    // Don't clear passkey here — onPassKeyNotify may have fired just before
+    // disconnect during a mid-connection security upgrade; loop() still needs
+    // to display it. Cleared only in onAuthenticationComplete.
     mtu = 23;
     Serial.println("[ble] disconnected");
     // Restart advertising so the next client can find us.

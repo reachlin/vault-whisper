@@ -73,8 +73,12 @@ NUS_SVC = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
 NUS_RX  = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
 
 AUDIO_MAGIC   = b"\xaa"
-AUDIO_RATE    = 8000    # Hz — matches firmware AUDIO_RATE
-AUDIO_PAYLOAD = 176     # PCM bytes per BLE frame (even number; 88 int16 samples per frame)
+AUDIO_RATE    = int(os.getenv("AUDIO_RATE", "8000"))    # Hz — must match firmware AUDIO_RATE build flag
+# BLE ATT MTU on macOS is typically 185; Write Without Response payload = MTU-3 = 182 bytes.
+# Frame overhead is 3 bytes (0xAA + uint16_le size), leaving 179 bytes for audio.
+# Round down to 176 (even for int16_t alignment) to stay safely within any negotiated MTU.
+_ATT_MAX_AUDIO = 176
+AUDIO_PAYLOAD = min(AUDIO_RATE * 22 // 1000, _ATT_MAX_AUDIO)
 
 
 # ── BLE helpers ───────────────────────────────────────────────────────────────
@@ -133,7 +137,7 @@ def _macos_tts_to_pcm(text: str) -> bytes:
         )
         # -q 127: highest quality sample-rate conversion
         subprocess.run(
-            ["afconvert", aiff, wav16, "-f", "WAVE", "-d", "LEI16@8000", "-c", "1", "-q", "127"],
+            ["afconvert", aiff, wav16, "-f", "WAVE", "-d", f"LEI16@{AUDIO_RATE}", "-c", "1", "-q", "127"],
             check=True, capture_output=True,
         )
         with wave.open(wav16, "rb") as wf:
@@ -157,7 +161,7 @@ def _openai_tts_to_pcm(text: str) -> bytes:
         with open(in_wav, "wb") as f:
             f.write(in_wav_bytes)
         subprocess.run(
-            ["afconvert", in_wav, out_wav, "-f", "WAVE", "-d", "LEI16@8000", "-c", "1", "-q", "127"],
+            ["afconvert", in_wav, out_wav, "-f", "WAVE", "-d", f"LEI16@{AUDIO_RATE}", "-c", "1", "-q", "127"],
             check=True, capture_output=True,
         )
         with wave.open(out_wav, "rb") as wf:
