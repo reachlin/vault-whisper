@@ -114,7 +114,9 @@ void bleInit(const char* deviceName) {
     NUS_RX_UUID,
     BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_WRITE_NR
   );
-  rxChar->setAccessPermissions(ESP_GATT_PERM_WRITE_ENCRYPTED);
+  // No encryption required for RX — writes must work immediately on reconnect
+  // before the BLE link re-encryption handshake completes (~300ms on bonded pair).
+  rxChar->setAccessPermissions(ESP_GATT_PERM_WRITE);
   rxChar->setCallbacks(new RxCallbacks());
 
   svc->start();

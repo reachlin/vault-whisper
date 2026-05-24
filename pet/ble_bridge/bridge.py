@@ -205,6 +205,9 @@ async def run_bridge(address: str) -> None:
         activity = "idle"
         audio_task: asyncio.Task | None = None
 
+        # RX characteristic no longer requires encryption, but give the BLE
+        # stack one tick to finish its connection setup before writing.
+        await asyncio.sleep(0.3)
         await ble_write_json(ble, {"mood": mood, "activity": activity, "speech": ""})
 
         async with websockets.connect(SIMULATOR_WS) as ws:

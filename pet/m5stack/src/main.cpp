@@ -34,40 +34,30 @@ static const uint16_t PIP_BG     = 0x0060;   // #001800  face fill
 #ifdef M5STICK_S3
 
 // S3: ES8311 internal speaker via M5Unified.
-// Cross-core buffer problem: Core 1 (Arduino loop) writes PCM through its
-// write-back D-cache; Core 0 (Speaker task) reads the same address and may
-// see stale data if Core 1's dirty lines haven't been written back to SRAM.
-// Fix: call Cache_WriteBack_Addr() before handing the buffer to playRaw().
-// This applies to both PSRAM and internal SRAM on ESP32-S3.
-#include <esp_heap_caps.h>
+// Static buffer in internal SRAM BSS — allocated at link time so it never
+// fails at runtime. The linker would refuse to build if it didn't fit.
+// Cache_WriteBack_Addr() flushes Core 1's write-back D-cache lines before
+// handing the buffer pointer to the Speaker task on Core 0.
 #include <esp32s3/rom/cache.h>
-static int16_t* g_pcmBuf = nullptr;
-static size_t   g_pcmCap = 0;
-static size_t   g_pcmLen = 0;
+static const size_t AUDIO_CAP = (size_t)AUDIO_RATE * 5;  // 5 s @ 16 kHz = 160 KB
+static int16_t g_pcmBuf[AUDIO_CAP];
+static size_t  g_pcmLen = 0;
 
 static void initAudio() {
     M5.Speaker.setVolume(255);
     M5.Speaker.tone(1000, 300);
-    // 10 s buffer — internal SRAM unlikely to have 320 KB free after BLE stack,
-    // so go straight to PSRAM (cache-flushed before playRaw, so coherence is safe).
-    g_pcmCap = (size_t)AUDIO_RATE * 10;
-    g_pcmBuf = (int16_t*)heap_caps_malloc(g_pcmCap * sizeof(int16_t),
-                                           MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-    if (!g_pcmBuf) {
-        g_pcmBuf = (int16_t*)malloc(g_pcmCap * sizeof(int16_t));
-    }
+    delay(350);
 }
 
 static void appendAudio(const uint8_t* src, uint16_t n) {
     const int16_t* s16 = (const int16_t*)src;
     size_t mono = n / 2;
-    if (g_pcmBuf && g_pcmLen + mono <= g_pcmCap)
+    if (g_pcmLen + mono <= AUDIO_CAP)
         memcpy(g_pcmBuf + g_pcmLen, s16, mono * sizeof(int16_t)), g_pcmLen += mono;
 }
 
 static void flushAudio() {
-    if (!g_pcmBuf || g_pcmLen == 0) return;
-    // Flush Core 1's dirty D-cache lines to backing store before Core 0 reads.
+    if (g_pcmLen == 0) return;
     Cache_WriteBack_Addr((uint32_t)g_pcmBuf, g_pcmLen * sizeof(int16_t));
     M5.Speaker.playRaw(g_pcmBuf, g_pcmLen, AUDIO_RATE, false, 1, 0, true);
     g_pcmLen = 0;
@@ -490,8 +480,12 @@ void loop() {
     bool connected = bleConnected();
 
     if (connected && !wasConnected) {
-        // just reconnected — restore brightness and reset state
+        // just reconnected — restore brightness and reset state.
+        // end()+begin() is required: begin() returns early if the task is already
+        // running, so _speaker_enabled_cb_sticks3 (ES8311 init + PA enable) is
+        // never called again after the first disconnect unless we end() first.
         M5.Display.setBrightness(80);
+        M5.Speaker.setVolume(255);
         strlcpy(g_activity, "idle",    sizeof(g_activity));
         strlcpy(g_mood,     "neutral", sizeof(g_mood));
         uiMode = MODE_FACE;
