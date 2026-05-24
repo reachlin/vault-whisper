@@ -258,6 +258,7 @@ class AgentLoop:
             self._oai = AsyncOpenAI(
                 api_key=os.environ.get("OPENAI_API_KEY", "none"),
                 base_url=os.environ.get("PET_BASE_URL") if provider == "openai_compatible" else None,
+                timeout=httpx.Timeout(90.0, connect=5.0),
             )
         elif provider == "claude":
             import anthropic
@@ -427,13 +428,16 @@ class AgentLoop:
             m["role"] != "tool" for m in messages
         )
         tool_choice = "required" if is_first_round else "auto"
-        response = await self._oai.chat.completions.create(
-            model=self._model,
-            messages=[{"role": "system", "content": self._system}] + messages,
-            tools=_OAI_TOOLS,
-            tool_choice=tool_choice,
-            parallel_tool_calls=False,
-            max_tokens=512,
+        response = await asyncio.wait_for(
+            self._oai.chat.completions.create(
+                model=self._model,
+                messages=[{"role": "system", "content": self._system}] + messages,
+                tools=_OAI_TOOLS,
+                tool_choice=tool_choice,
+                parallel_tool_calls=False,
+                max_tokens=512,
+            ),
+            timeout=90.0,
         )
         msg = response.choices[0].message
         messages.append(msg.model_dump(exclude_none=True))

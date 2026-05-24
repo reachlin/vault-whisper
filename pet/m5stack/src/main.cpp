@@ -48,9 +48,9 @@ static size_t   g_pcmLen = 0;
 static void initAudio() {
     M5.Speaker.setVolume(255);
     M5.Speaker.tone(1000, 300);
-    // 5 s of mono audio.  Try internal SRAM first (smaller, but no PSRAM alloc
-    // overhead); fall back to default heap (PSRAM on S3) if it doesn't fit.
-    g_pcmCap = (size_t)AUDIO_RATE * 5;
+    // 10 s buffer — internal SRAM unlikely to have 320 KB free after BLE stack,
+    // so go straight to PSRAM (cache-flushed before playRaw, so coherence is safe).
+    g_pcmCap = (size_t)AUDIO_RATE * 10;
     g_pcmBuf = (int16_t*)heap_caps_malloc(g_pcmCap * sizeof(int16_t),
                                            MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     if (!g_pcmBuf) {

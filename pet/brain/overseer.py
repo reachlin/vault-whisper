@@ -86,10 +86,12 @@ class OverseerLoop:
         self._max_rounds = max_tool_rounds
 
         if provider in ("openai", "openai_compatible"):
+            import httpx
             from openai import AsyncOpenAI
             self._oai = AsyncOpenAI(
                 api_key=os.environ.get("OPENAI_API_KEY", "none"),
                 base_url=os.environ.get("PET_BASE_URL") if provider == "openai_compatible" else None,
+                timeout=httpx.Timeout(90.0, connect=5.0),
             )
         elif provider == "claude":
             import anthropic
@@ -113,12 +115,15 @@ class OverseerLoop:
 
     async def _step_openai(self, messages: list) -> bool:
         tool_choice = "required" if len(messages) == 1 else "auto"
-        response = await self._oai.chat.completions.create(
-            model=self._model,
-            messages=[{"role": "system", "content": _SYSTEM}] + messages,
-            tools=_OAI_TOOLS,
-            tool_choice=tool_choice,
-            max_tokens=1024,
+        response = await asyncio.wait_for(
+            self._oai.chat.completions.create(
+                model=self._model,
+                messages=[{"role": "system", "content": _SYSTEM}] + messages,
+                tools=_OAI_TOOLS,
+                tool_choice=tool_choice,
+                max_tokens=1024,
+            ),
+            timeout=90.0,
         )
         msg = response.choices[0].message
         messages.append(msg.model_dump(exclude_none=True))
