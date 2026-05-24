@@ -428,6 +428,10 @@ class AgentLoop:
             m["role"] != "tool" for m in messages
         )
         tool_choice = "required" if is_first_round else "auto"
+        extra: dict = {}
+        if self._provider == "openai_compatible":
+            # Ollama: cap KV-cache to 8192 tokens — default 32K is very slow on Metal.
+            extra["extra_body"] = {"options": {"num_ctx": 8192}}
         response = await asyncio.wait_for(
             self._oai.chat.completions.create(
                 model=self._model,
@@ -436,8 +440,9 @@ class AgentLoop:
                 tool_choice=tool_choice,
                 parallel_tool_calls=False,
                 max_tokens=512,
+                **extra,
             ),
-            timeout=90.0,
+            timeout=60.0,
         )
         msg = response.choices[0].message
         messages.append(msg.model_dump(exclude_none=True))
@@ -660,7 +665,9 @@ class AgentLoop:
                  self._provider, self._model, self._heartbeat)
         while True:
             try:
-                await self.tick()
+                await asyncio.wait_for(self.tick(), timeout=120.0)
+            except asyncio.TimeoutError:
+                log.warning("tick exceeded 120s wall-clock — Ollama too slow, skipping")
             except Exception as e:
                 log.error("tick error: %s", e)
             await asyncio.sleep(self._heartbeat)

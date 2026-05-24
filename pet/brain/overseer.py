@@ -91,7 +91,7 @@ class OverseerLoop:
             self._oai = AsyncOpenAI(
                 api_key=os.environ.get("OPENAI_API_KEY", "none"),
                 base_url=os.environ.get("PET_BASE_URL") if provider == "openai_compatible" else None,
-                timeout=httpx.Timeout(90.0, connect=5.0),
+                timeout=httpx.Timeout(60.0, connect=5.0),
             )
         elif provider == "claude":
             import anthropic
@@ -115,6 +115,9 @@ class OverseerLoop:
 
     async def _step_openai(self, messages: list) -> bool:
         tool_choice = "required" if len(messages) == 1 else "auto"
+        extra: dict = {}
+        if self._provider == "openai_compatible":
+            extra["extra_body"] = {"options": {"num_ctx": 8192}}
         response = await asyncio.wait_for(
             self._oai.chat.completions.create(
                 model=self._model,
@@ -122,8 +125,9 @@ class OverseerLoop:
                 tools=_OAI_TOOLS,
                 tool_choice=tool_choice,
                 max_tokens=1024,
+                **extra,
             ),
-            timeout=90.0,
+            timeout=60.0,
         )
         msg = response.choices[0].message
         messages.append(msg.model_dump(exclude_none=True))
@@ -189,6 +193,8 @@ class OverseerLoop:
         while True:
             await asyncio.sleep(self._interval)
             try:
-                await self.reflect()
+                await asyncio.wait_for(self.reflect(), timeout=180.0)
+            except asyncio.TimeoutError:
+                log.warning("overseer: reflection timed out after 180s")
             except Exception as e:
                 log.error("overseer error: %s", e)
