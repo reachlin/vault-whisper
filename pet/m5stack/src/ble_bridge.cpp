@@ -90,8 +90,10 @@ class SecCallbacks : public BLESecurityCallbacks {
 
 void bleInit(const char* deviceName) {
   BLEDevice::init(deviceName);
-  // Request the biggest MTU we can get. macOS negotiates to 185 typically.
   BLEDevice::setMTU(517);
+
+  // Clear stale bonds on every boot so macOS "Forget" + reboot reconnects cleanly.
+  bleClearBonds();
 
   BLEDevice::setEncryptionLevel(ESP_BLE_SEC_ENCRYPT_MITM);
   BLEDevice::setSecurityCallbacks(new SecCallbacks());

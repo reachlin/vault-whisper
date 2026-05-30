@@ -16,7 +16,7 @@ def _build_system(identity_path: Path) -> str:
         data = yaml.safe_load(f)
     rules = "\n".join(f"- {r}" for r in data["hard_rules"])
     lang = data.get("language", "English")
-    lang_rule = f"\nLANGUAGE: Always respond and speak() in {lang} only.\n" if lang.lower() != "english" else ""
+    lang_rule = f"\nLANGUAGE: Always respond and speak() in {lang} only.\n"
     return f"""You are {data['name']}.
 
 PURPOSE:
