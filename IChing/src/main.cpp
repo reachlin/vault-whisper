@@ -415,6 +415,11 @@ void setup() {
     snprintf(name, sizeof(name), "IChing-%02X%02X", mac[4], mac[5]);
     bleInit(name);
 
+    // M5PM1 (0x6E) charging LED: hardware-driven by PMIC state machine.
+    // The LED_EN default-level register (0x06 bit4) only sets power-on reset,
+    // not runtime — the charging state machine overrides it autonomously.
+    // Physical tape over the LED is the reliable fix.
+
     Serial.begin(115200);
 }
 
