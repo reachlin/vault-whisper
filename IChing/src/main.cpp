@@ -230,6 +230,9 @@ static void drawIdle(uint32_t t) {
     if ((t / 600) % 2 == 0) {
         spr.setTextColor(PIP_BRIGHT, TFT_BLACK);
         spr.drawString("[ SHAKE TO BEGIN ]", CX, 210);
+    } else {
+        spr.setTextColor(PIP_DIM, TFT_BLACK);
+        spr.drawString("[ 2x PWR = OFF ]", CX, 210);
     }
 
     spr.pushSprite(0, 0);
