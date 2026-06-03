@@ -221,6 +221,11 @@ class AgentLoop:
 
         directive = await self._sim.get_directive() or self._directive.read()
 
+        # Close Zork session if the directive no longer calls for it
+        if self._zork.is_alive and "zork" not in directive.lower():
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, self._zork.close)
+
         pet = state["pet"]
         self._pos_history.append((pet["x"], pet["y"]))
 
