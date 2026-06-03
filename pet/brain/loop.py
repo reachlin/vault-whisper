@@ -10,6 +10,7 @@ import httpx
 from brain.directive import Directive
 from brain.longterm_memory import LongTermMemory
 from brain.parser import parse_response
+from brain.zork import ZorkSession
 
 log = logging.getLogger(__name__)
 
@@ -129,6 +130,19 @@ _TOOLS_SPEC = [
         "name": "mc_attack",
         "description": "Attack the nearest mob.",
         "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "zork",
+        "description": (
+            "Play one turn of Zork I text adventure. Send a command and receive the game response. "
+            "Use 'start' to begin or resume a saved game. "
+            "Example commands: 'go north', 'take lamp', 'look', 'inventory', 'examine mailbox'."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {"command": {"type": "string"}},
+            "required": ["command"],
+        },
     },
     {
         "name": "mc_craft",
@@ -252,6 +266,7 @@ class AgentLoop:
         self._pos_history: deque[tuple] = deque(maxlen=6)  # recent positions
 
         self._vision = os.environ.get("PET_VISION", "true").lower() != "false"
+        self._zork = ZorkSession()
 
         if provider in ("openai", "openai_compatible"):
             from openai import AsyncOpenAI
@@ -401,6 +416,13 @@ class AgentLoop:
             elif health <= 8:
                 mc_text += " *** LOW HEALTH — find shelter or flee NOW! ***"
             parts.append(mc_text)
+
+        if self._zork.is_alive:
+            parts.append(
+                f"\nZORK I — Turn {self._zork.turn}, Score {self._zork.score}/350.\n"
+                f"Last game output:\n{self._zork.last_output}\n"
+                "Use the zork() tool to play your next move. Speak a short narration of what you're doing."
+            )
 
         parts.append(f"\nCURRENT DIRECTIVE:\n{directive or self._directive.read()}")
         parts.append("\nWhat do you do?")
@@ -573,6 +595,20 @@ class AgentLoop:
                 })
                 self._cur_actions.append(f"MC place {args['block_type']} at ({args['x']},{args['y']},{args['z']})")
                 return result
+            if name == "zork":
+                cmd = args["command"].strip()
+                loop = asyncio.get_event_loop()
+                if cmd == "start" or not self._zork.is_alive:
+                    output = await loop.run_in_executor(None, self._zork.start)
+                    self._cur_actions.append("started Zork")
+                else:
+                    output = await loop.run_in_executor(None, self._zork.command, cmd)
+                    self._cur_actions.append(f"zork: {cmd}")
+                return {
+                    "output": output,
+                    "turn": self._zork.turn,
+                    "score": self._zork.score,
+                }
         except Exception as e:
             log.error("tool %s failed: %s", name, e)
             return {"error": str(e)}

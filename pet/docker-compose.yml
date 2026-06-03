@@ -22,6 +22,8 @@ services:
     restart: unless-stopped
     depends_on:
       - simulator
+    volumes:
+      - pet_data:/app/data
     env_file:
       - path: .env
         required: false
