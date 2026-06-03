@@ -91,47 +91,6 @@ _TOOLS_SPEC = [
         },
     },
     {
-        "name": "mc_state",
-        "description": "Get current Minecraft game state: position, health, food, inventory, nearby entities and blocks. Returns {connected: false} if not in a game.",
-        "parameters": {"type": "object", "properties": {}},
-    },
-    {
-        "name": "mc_chat",
-        "description": "Send a chat message in Minecraft.",
-        "parameters": {
-            "type": "object",
-            "properties": {"text": {"type": "string"}},
-            "required": ["text"],
-        },
-    },
-    {
-        "name": "mc_move",
-        "description": "Pathfind to (x, y, z) coordinates in the Minecraft world. Blocks until arrival or failure.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "x": {"type": "number"},
-                "y": {"type": "number"},
-                "z": {"type": "number"},
-            },
-            "required": ["x", "y", "z"],
-        },
-    },
-    {
-        "name": "mc_mine",
-        "description": "Find and mine the nearest block of a given type (e.g. 'oak_log', 'stone', 'coal_ore').",
-        "parameters": {
-            "type": "object",
-            "properties": {"block_type": {"type": "string"}},
-            "required": ["block_type"],
-        },
-    },
-    {
-        "name": "mc_attack",
-        "description": "Attack the nearest mob.",
-        "parameters": {"type": "object", "properties": {}},
-    },
-    {
         "name": "zork",
         "description": (
             "Play one turn of Zork I text adventure. Send a command and receive the game response. "
@@ -142,37 +101,6 @@ _TOOLS_SPEC = [
             "type": "object",
             "properties": {"command": {"type": "string"}},
             "required": ["command"],
-        },
-    },
-    {
-        "name": "mc_craft",
-        "description": (
-            "Craft an item by Minecraft item ID (e.g. oak_planks, stick, crafting_table, torch, "
-            "wooden_pickaxe, wooden_axe, stone_pickaxe, furnace). "
-            "Walks to a nearby crafting_table automatically for recipes that need one. "
-            "Returns updated inventory on success."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "item": {"type": "string"},
-                "count": {"type": "integer", "default": 1},
-            },
-            "required": ["item"],
-        },
-    },
-    {
-        "name": "mc_place",
-        "description": "Place a block from inventory at (x, y, z). Use to build shelter walls or place a crafting_table.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "block_type": {"type": "string"},
-                "x": {"type": "number"},
-                "y": {"type": "number"},
-                "z": {"type": "number"},
-            },
-            "required": ["block_type", "x", "y", "z"],
         },
     },
 ]
@@ -258,7 +186,6 @@ class AgentLoop:
 
         self._directive = Directive(memory_file.parent / "directive.md")
         self._http = httpx.AsyncClient(timeout=10.0, trust_env=False)
-        self._mc_url = os.environ.get("MC_BRIDGE_URL", "http://host.docker.internal:18090")
         self._last_transcript: str | None = None  # only react when transcript changes
         self._last_actions: list[str] = []         # actions from the PREVIOUS tick
         self._cur_actions: list[str] = []          # actions accumulating in current tick
@@ -285,10 +212,6 @@ class AgentLoop:
         state = await self._sim.get_state()
         frame = await self._sim.get_last_frame()
         raw_transcript = await self._sim.get_last_transcript()
-        try:
-            mc_state = await self._mc_http("GET", "/state")
-        except Exception:
-            mc_state = {"connected": False}
 
         # Only surface the transcript when it's new
         new_transcript = raw_transcript if raw_transcript != self._last_transcript else None
@@ -304,7 +227,7 @@ class AgentLoop:
         # snapshot previous tick's actions before starting new ones
         self._last_actions = self._cur_actions
         self._cur_actions = []
-        messages = [{"role": "user", "content": self._build_user(state, new_transcript, frame, mc_state, directive)}]
+        messages = [{"role": "user", "content": self._build_user(state, new_transcript, frame, directive)}]
 
         await self._sim.set_activity("thinking")
         try:
@@ -318,7 +241,7 @@ class AgentLoop:
         finally:
             await self._sim.set_activity("idle")
 
-    def _build_user(self, state: dict, transcript: str | None, frame: str | None, mc_state: dict | None = None, directive: str = ""):
+    def _build_user(self, state: dict, transcript: str | None, frame: str | None, directive: str = ""):
         pet = state["pet"]
         cfg = state["config"]
 
@@ -343,79 +266,6 @@ class AgentLoop:
             parts.append("No new messages from human. Focus on exploring, not greeting.")
 
         parts.append("Camera frame attached — look at it and react to what you see." if frame else "No camera frame.")
-
-        if mc_state and mc_state.get("connected"):
-            _hostile = {"zombie", "skeleton", "creeper", "spider", "enderman", "witch", "slime",
-                        "phantom", "drowned", "husk", "stray", "pillager", "ravager", "blaze"}
-            p = mc_state.get("position", {})
-            entities = mc_state.get("nearby_entities", [])
-            hostile_near = [e for e in entities if e.get("name", "").lower() in _hostile and e.get("distance", 99) < 8]
-            def _fmt_entity(e):
-                base = f"{e['name']}({e['distance']}m)"
-                if e.get("type") == "player" and "x" in e:
-                    base += f"@({e['x']},{e['y']},{e['z']})"
-                return base
-            entity_str = ", ".join(_fmt_entity(e) for e in entities[:5]) or "none"
-            # Find nearest human player for follow directive
-            players = [e for e in entities if e.get("type") == "player" and "x" in e]
-            nearest_player = players[0] if players else None
-            inv = mc_state.get("inventory", [])
-            inv_str = ", ".join(f"{i['name']}x{i['count']}" for i in inv[:8]) or "empty"
-            health = mc_state.get("health", 20)
-            tod = mc_state.get("time_of_day", 0)
-            if tod < 11000:
-                time_phase = f"day ({tod})"
-            elif tod < 13000:
-                time_phase = f"DUSK — shelter soon! ({tod})"
-            elif tod < 23000:
-                time_phase = f"NIGHT — stay inside! ({tod})"
-            else:
-                time_phase = f"dawn ({tod})"
-
-            inv_names = {i["name"] for i in inv}
-            inv_count = {i["name"]: i["count"] for i in inv}
-            has_pickaxe = any("pickaxe" in n for n in inv_names)
-            has_axe = any("axe" in n for n in inv_names)
-            cobble = inv_count.get("cobblestone", 0)
-            sticks = inv_count.get("stick", 0)
-            planks = sum(v for k, v in inv_count.items() if "planks" in k)
-            pos_y = p.get("y", 64)
-            if pos_y < 60:
-                goal_hint = "→ UNDERGROUND! mc_move to surface (y=100) immediately"
-            elif not has_pickaxe and cobble >= 3 and sticks >= 2:
-                goal_hint = "→ mc_craft stone_pickaxe NOW (you have cobblestone + sticks)"
-            elif not has_pickaxe and planks >= 3 and sticks >= 2:
-                goal_hint = "→ mc_craft wooden_pickaxe (need crafting_table nearby)"
-            elif not has_pickaxe:
-                goal_hint = "→ mine oak_log then craft planks→sticks→wooden_pickaxe"
-            elif cobble < 20:
-                goal_hint = "→ mc_mine stone to collect cobblestone (pickaxe required, you have one)"
-            elif sum(v for k, v in inv_count.items() if "coal" in k) < 4:
-                goal_hint = "→ mc_mine coal_ore for torches"
-            elif sum(v for k, v in inv_count.items() if "iron" in k) < 4:
-                goal_hint = "→ mc_mine iron_ore to progress"
-            else:
-                goal_hint = "→ well equipped — explore, build, or help the player"
-
-            mc_text = (
-                f"\nMINECRAFT STATE — {mc_state.get('username','Pepper')} "
-                f"at ({p.get('x')},{p.get('y')},{p.get('z')}). "
-                f"Health: {health}/20. Food: {mc_state.get('food')}/20. "
-                f"Time: {time_phase}. Mode: {mc_state.get('game_mode')}. "
-                f"Nearby: {entity_str}. "
-                f"Inventory: {inv_str}. "
-                f"Goal hint: {goal_hint}."
-            )
-            if nearest_player and nearest_player["distance"] > 10:
-                np = nearest_player
-                mc_text += (f" *** PLAYER {np['name']} is {np['distance']}m away at "
-                            f"({np['x']},{np['y']},{np['z']}) — mc_move there now to follow! ***")
-            if hostile_near:
-                names = ", ".join(f"{e['name']} ({e['distance']}m)" for e in hostile_near)
-                mc_text += f" *** DANGER: {names} nearby — mc_attack or flee! ***"
-            elif health <= 8:
-                mc_text += " *** LOW HEALTH — find shelter or flee NOW! ***"
-            parts.append(mc_text)
 
         if self._zork.is_alive:
             parts.append(
@@ -517,16 +367,6 @@ class AgentLoop:
         label = name
         if name == "speak":
             label = f'speak: "{str(args.get("text",""))[:60]}"'
-        elif name == "mc_move":
-            label = f"mc_move → ({args.get('x')},{args.get('y')},{args.get('z')})"
-        elif name == "mc_mine":
-            label = f"mc_mine: {args.get('block_type')}"
-        elif name == "mc_craft":
-            label = f"mc_craft: {args.get('item')}x{args.get('count',1)}"
-        elif name == "mc_place":
-            label = f"mc_place: {args.get('block_type')} at ({args.get('x')},{args.get('y')},{args.get('z')})"
-        elif name == "mc_chat":
-            label = f'mc_chat: "{args.get("text","")[:50]}"'
         elif name == "search":
             label = f"search: {args.get('query','')[:50]}"
         elif name == "browse":
@@ -566,35 +406,6 @@ class AgentLoop:
                 return await self._search(args["query"])
             if name == "browse":
                 return await self._browse(args["url"])
-            if name == "mc_state":
-                return await self._mc_http("GET", "/state")
-            if name == "mc_chat":
-                return await self._mc_http("POST", "/chat", {"text": args["text"]})
-            if name == "mc_move":
-                await self._sim.set_activity("moving")
-                result = await self._mc_http("POST", "/move", {"x": args["x"], "y": args["y"], "z": args["z"]})
-                await self._sim.set_activity("thinking")
-                self._cur_actions.append(f"MC move to ({args['x']},{args['y']},{args['z']})")
-                return result
-            if name == "mc_mine":
-                result = await self._mc_http("POST", "/mine", {"block_type": args["block_type"]})
-                self._cur_actions.append(f"MC mine {args['block_type']}")
-                return result
-            if name == "mc_attack":
-                result = await self._mc_http("POST", "/attack", {})
-                self._cur_actions.append("MC attacked mob")
-                return result
-            if name == "mc_craft":
-                result = await self._mc_http("POST", "/craft", {"item": args["item"], "count": args.get("count", 1)})
-                self._cur_actions.append(f"MC craft {args['item']}x{args.get('count',1)}")
-                return result
-            if name == "mc_place":
-                result = await self._mc_http("POST", "/place", {
-                    "block_type": args["block_type"],
-                    "x": args["x"], "y": args["y"], "z": args["z"],
-                })
-                self._cur_actions.append(f"MC place {args['block_type']} at ({args['x']},{args['y']},{args['z']})")
-                return result
             if name == "zork":
                 cmd = args["command"].strip()
                 loop = asyncio.get_event_loop()
@@ -619,14 +430,6 @@ class AgentLoop:
             await self._sim._http.post("/brain/log", json={"text": text, "level": level})
         except Exception:
             pass
-
-    async def _mc_http(self, method: str, path: str, body: dict | None = None) -> dict:
-        url = self._mc_url + path
-        if method == "GET":
-            r = await self._http.get(url)
-        else:
-            r = await self._http.post(url, json=body or {})
-        return r.json()
 
     async def _lynx(self, url: str) -> str:
         proc = await asyncio.create_subprocess_exec(

@@ -29,7 +29,6 @@ services:
         required: false
     environment:
       - SIMULATOR_URL=http://simulator:18080
-      - MC_BRIDGE_URL=http://mcbridge:18090
 
   mcserver:
     build:

@@ -229,35 +229,3 @@ async def test_stock_price_returns_data():
     assert result["ticker"] == "INTC"
     assert result["price"] == 87.94
     assert result["currency"] == "USD"
-
-
-# --- mc_craft / mc_place ---
-
-@pytest.mark.asyncio
-async def test_mc_craft_calls_bridge():
-    loop, _ = make_agent_loop()
-    fake = AsyncMock()
-    fake.json = lambda: {"ok": True, "crafted": "torch", "count": 4}
-    with patch.object(loop._http, "post", return_value=fake):
-        result = await loop._execute("mc_craft", {"item": "torch", "count": 4})
-    assert result.get("crafted") == "torch"
-
-
-@pytest.mark.asyncio
-async def test_mc_craft_records_action():
-    loop, _ = make_agent_loop()
-    fake = AsyncMock()
-    fake.json = lambda: {"ok": True, "crafted": "wooden_pickaxe", "count": 1}
-    with patch.object(loop._http, "post", return_value=fake):
-        await loop._execute("mc_craft", {"item": "wooden_pickaxe", "count": 1})
-    assert any("craft" in a for a in loop._cur_actions)
-
-
-@pytest.mark.asyncio
-async def test_mc_place_calls_bridge():
-    loop, _ = make_agent_loop()
-    fake = AsyncMock()
-    fake.json = lambda: {"ok": True, "placed": "oak_planks", "at": {"x": 0, "y": 64, "z": 0}}
-    with patch.object(loop._http, "post", return_value=fake):
-        result = await loop._execute("mc_place", {"block_type": "oak_planks", "x": 0, "y": 64, "z": 0})
-    assert result.get("placed") == "oak_planks"
