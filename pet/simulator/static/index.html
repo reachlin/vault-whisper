@@ -16,24 +16,83 @@
       gap: 16px;
     }
     h1 { font-size: 1.2rem; color: #58a6ff; letter-spacing: 2px; }
+
     #layout {
       display: flex;
       gap: 20px;
       align-items: flex-start;
+      width: 100%;
+      max-width: 900px;
     }
-    #canvas-wrap {
-      position: relative;
+
+    /* ── Zork terminal ── */
+    #zork-terminal {
+      flex: 1;
+      background: #060e06;
+      border: 1px solid #1a3a1a;
+      border-radius: 6px;
+      display: flex;
+      flex-direction: column;
+      min-height: 420px;
+      max-height: 520px;
+      overflow: hidden;
     }
-    canvas {
-      border: 1px solid #30363d;
-      display: block;
+    #zork-header {
+      background: #0d200d;
+      border-bottom: 1px solid #1a3a1a;
+      padding: 6px 12px;
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.72rem;
+      color: #f5a623;
+      letter-spacing: 1px;
+      flex-shrink: 0;
+    }
+    #zork-output {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+      font-size: 0.82rem;
+      line-height: 1.55;
+      color: #00cc00;
+    }
+    #zork-output::-webkit-scrollbar { width: 4px; }
+    #zork-output::-webkit-scrollbar-thumb { background: #1a3a1a; }
+    .zork-cmd  { color: #56ff90; margin-top: 6px; }
+    .zork-line { color: #00cc00; }
+    .zork-room { color: #7fff7f; font-weight: bold; }
+    #zork-prompt {
+      padding: 6px 12px;
+      font-size: 0.82rem;
+      color: #56ff90;
+      border-top: 1px solid #1a3a1a;
+      flex-shrink: 0;
+    }
+    .blink { animation: blink 1s step-end infinite; }
+    @keyframes blink { 50% { opacity: 0; } }
+    #zork-idle {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #1a4a1a;
+      font-size: 0.8rem;
+      text-align: center;
+      line-height: 2;
+    }
+
+    /* ── Right sidebar ── */
+    #sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-width: 200px;
     }
     #hud {
       background: #161b22;
       border: 1px solid #30363d;
       border-radius: 6px;
       padding: 12px 16px;
-      min-width: 200px;
       display: flex;
       flex-direction: column;
       gap: 8px;
@@ -42,80 +101,24 @@
     #hud h2 { color: #58a6ff; font-size: 0.85rem; margin-bottom: 4px; }
     .hud-row { display: flex; justify-content: space-between; gap: 12px; }
     .hud-val { color: #79c0ff; }
-    #camera-wrap {
+
+    #controls-panel {
       display: flex;
       flex-direction: column;
-      gap: 6px;
-      align-items: center;
+      gap: 8px;
+    }
+    .ctrl-row {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 0.72rem;
+      color: #8b949e;
     }
     video {
-      width: 160px;
-      height: 120px;
+      width: 100%;
       border: 1px solid #30363d;
       border-radius: 4px;
       background: #000;
-    }
-    #cam-status, #mic-status { font-size: 0.72rem; color: #8b949e; }
-    #mic-status.listening { color: #56d364; }
-    #controls {
-      font-size: 0.75rem;
-      color: #8b949e;
-      text-align: center;
-    }
-    #speech-display {
-      background: #161b22;
-      border: 1px solid #388bfd;
-      border-radius: 6px;
-      padding: 10px 16px;
-      width: 100%;
-      max-width: 700px;
-      min-height: 40px;
-      font-size: 0.95rem;
-      color: #56d364;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-    #speech-display .label {
-      color: #388bfd;
-      font-size: 0.72rem;
-      white-space: nowrap;
-      flex-shrink: 0;
-    }
-    #speech-text {
-      flex: 1;
-      font-style: italic;
-      color: #56d364;
-      word-break: break-word;
-    }
-    #speech-text.empty { color: #30363d; font-style: normal; }
-    #log {
-      background: #161b22;
-      border: 1px solid #30363d;
-      border-radius: 6px;
-      padding: 8px 12px;
-      width: 100%;
-      max-width: 700px;
-      height: 80px;
-      overflow-y: auto;
-      font-size: 0.75rem;
-      color: #8b949e;
-    }
-    .log-entry { padding: 1px 0; }
-    .log-speak { color: #56d364; }
-    #speak-form {
-      display: flex;
-      gap: 8px;
-    }
-    #speak-input {
-      background: #161b22;
-      border: 1px solid #30363d;
-      border-radius: 4px;
-      color: #e6edf3;
-      padding: 4px 8px;
-      font-family: inherit;
-      font-size: 0.82rem;
-      width: 280px;
     }
     button {
       background: #238636;
@@ -125,60 +128,105 @@
       cursor: pointer;
       font-family: inherit;
       font-size: 0.82rem;
-      padding: 4px 12px;
+      padding: 5px 12px;
     }
-    button:hover { background: #2ea043; }
+    button:hover { filter: brightness(1.15); }
+    #zork-btn { background: #1a6e1a; width: 100%; padding: 7px; font-size: 0.88rem; letter-spacing: 1px; }
+    #zork-btn.active { background: #b91c1c; }
+
+    /* ── Bottom bar ── */
+    #speech-display {
+      background: #161b22;
+      border: 1px solid #388bfd;
+      border-radius: 6px;
+      padding: 10px 16px;
+      width: 100%;
+      max-width: 900px;
+      min-height: 40px;
+      font-size: 0.95rem;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    #speech-display .label { color: #388bfd; font-size: 0.72rem; white-space: nowrap; flex-shrink: 0; }
+    #speech-text { flex: 1; font-style: italic; color: #56d364; word-break: break-word; }
+    #speech-text.empty { color: #30363d; font-style: normal; }
+    #speak-form { display: flex; gap: 8px; width: 100%; max-width: 900px; }
+    #speak-input {
+      flex: 1;
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 4px;
+      color: #e6edf3;
+      padding: 5px 10px;
+      font-family: inherit;
+      font-size: 0.82rem;
+    }
+    #brain-log {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 8px 12px;
+      width: 100%;
+      max-width: 900px;
+      height: 100px;
+      overflow-y: auto;
+      font-size: 0.75rem;
+      color: #8b949e;
+    }
   </style>
 </head>
 <body>
   <h1>AI PET SIMULATOR</h1>
 
   <div id="layout">
-    <div id="canvas-wrap">
-      <canvas id="grid"></canvas>
-      <div id="controls">arrow keys to move</div>
+
+    <!-- Zork terminal -->
+    <div id="zork-terminal">
+      <div id="zork-header">
+        <span id="zork-title">ZORK I: THE GREAT UNDERGROUND EMPIRE</span>
+        <span id="zork-stats">Score: — | Turn: —</span>
+      </div>
+      <div id="zork-output">
+        <div id="zork-idle">Press <strong>Play Zork</strong> to start Pepper's adventure.<br>
+          She will narrate each move out loud.<br><br>
+          ZORK I (1980) · Infocom · 350 points possible</div>
+      </div>
+      <div id="zork-prompt"><span class="blink">█</span></div>
     </div>
 
-    <div style="display:flex;flex-direction:column;gap:12px;">
+    <!-- Right sidebar -->
+    <div id="sidebar">
       <div id="hud">
         <h2>PET STATUS</h2>
-        <div class="hud-row"><span>position</span><span class="hud-val" id="h-pos">—</span></div>
-        <div class="hud-row"><span>facing</span><span class="hud-val" id="h-facing">—</span></div>
         <div class="hud-row"><span>mood</span><span class="hud-val" id="h-mood">—</span></div>
         <div class="hud-row"><span>tick</span><span class="hud-val" id="h-tick">—</span></div>
         <div class="hud-row"><span>ws</span><span class="hud-val" id="h-ws">connecting…</span></div>
-        <div class="hud-row"><span>heard</span><span class="hud-val" id="h-heard" style="font-style:italic;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">—</span></div>
+        <div class="hud-row"><span>heard</span><span class="hud-val" id="h-heard" style="font-style:italic;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">—</span></div>
         <div class="hud-row"><span>status</span><span id="h-activity" style="font-weight:bold">idle</span></div>
       </div>
 
-      <div id="camera-wrap">
-        <video id="cam" autoplay muted playsinline></video>
-        <div id="cam-status">camera off</div>
-        <button id="cam-btn">Enable Camera</button>
-      </div>
+      <div id="controls-panel">
+        <div class="ctrl-row">
+          <span id="zork-status">not playing</span>
+          <button id="zork-btn">▶ Play Zork</button>
+        </div>
 
-      <div id="camera-wrap">
-        <div id="mic-status">mic off</div>
-        <button id="mic-btn">Enable Mic</button>
-      </div>
+        <div class="ctrl-row">
+          <video id="cam" autoplay muted playsinline style="display:none"></video>
+          <span id="cam-status">camera off</span>
+          <button id="cam-btn">Enable Camera</button>
+        </div>
 
-      <div id="camera-wrap">
-        <div id="mute-status">speaker on</div>
-        <button id="mute-btn">Mute Speaker</button>
-      </div>
+        <div class="ctrl-row">
+          <span id="mic-status">mic off</span>
+          <button id="mic-btn">Enable Mic</button>
+        </div>
 
-      <div id="camera-wrap">
-        <div id="mc-status">not in game</div>
-        <button id="mc-btn" style="background:#5d9e22;">Join Minecraft</button>
-      </div>
-
-      <div id="mc-hud" style="display:none;background:#161b22;border:1px solid #30363d;border-radius:6px;padding:10px 14px;font-size:0.78rem;min-width:200px;">
-        <div style="color:#f5a623;font-weight:bold;margin-bottom:6px;">MINECRAFT</div>
-        <div class="hud-row"><span>pos</span><span class="hud-val" id="mc-pos">—</span></div>
-        <div class="hud-row"><span>health</span><span class="hud-val" id="mc-health">—</span></div>
-        <div class="hud-row"><span>food</span><span class="hud-val" id="mc-food">—</span></div>
-        <div class="hud-row"><span>mode</span><span class="hud-val" id="mc-mode">—</span></div>
-        <div class="hud-row"><span>nearby</span><span class="hud-val" id="mc-nearby" style="max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">—</span></div>
+        <div class="ctrl-row">
+          <span id="mute-status">speaker on</span>
+          <button id="mute-btn">Mute Speaker</button>
+        </div>
       </div>
     </div>
   </div>
@@ -193,12 +241,10 @@
     <button id="speak-btn">Send</button>
   </div>
 
-  <div id="brain-log" style="background:#161b22;border:1px solid #30363d;border-radius:6px;padding:8px 12px;width:100%;max-width:700px;height:120px;overflow-y:auto;font-size:0.75rem;color:#8b949e;">
+  <div id="brain-log">
     <div style="color:#58a6ff;font-weight:bold;margin-bottom:4px;">BRAIN LOG</div>
   </div>
 
-  <div id="log"></div>
-
-  <script src="/static/app.js?v=7"></script>
+  <script src="/static/app.js?v=8"></script>
 </body>
 </html>

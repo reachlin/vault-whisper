@@ -415,6 +415,7 @@ class AgentLoop:
                 else:
                     output = await loop.run_in_executor(None, self._zork.command, cmd)
                     self._cur_actions.append(f"zork: {cmd}")
+                await self._brain_log(f">{cmd}\n{output}\nscore:{self._zork.score} turn:{self._zork.turn}", "zork")
                 return {
                     "output": output,
                     "turn": self._zork.turn,

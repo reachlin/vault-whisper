@@ -1,31 +1,3 @@
-const CELL = 36;
-const MOOD_COLORS = {
-  neutral: '#4a90e2',
-  happy:   '#f5a623',
-  curious: '#7ed321',
-  tired:   '#9b9b9b',
-  scared:  '#d0021b',
-};
-const DIR_ANGLE = { up: -Math.PI / 2, down: Math.PI / 2, left: Math.PI, right: 0 };
-
-const canvas  = document.getElementById('grid');
-const ctx     = canvas.getContext('2d');
-const video   = document.getElementById('cam');
-const camBtn  = document.getElementById('cam-btn');
-const camStatus = document.getElementById('cam-status');
-const micBtn    = document.getElementById('mic-btn');
-const micStatus = document.getElementById('mic-status');
-const speakInput = document.getElementById('speak-input');
-const speakBtn   = document.getElementById('speak-btn');
-const log     = document.getElementById('log');
-
-let state       = null;
-let ws          = null;
-let camStream   = null;
-let frameTimer  = null;
-let petActivity = 'idle';
-let animTick    = 0;
-
 const ACTIVITY_COLORS = {
   idle:     '#555',
   thinking: '#79c0ff',
@@ -35,155 +7,21 @@ const ACTIVITY_COLORS = {
   moving:   '#f5a623',
 };
 
-// --- rendering ---
+const ZORK_DIRECTIVE =
+  'Start playing Zork I using the zork() tool with command="start". ' +
+  'Play one move per tick. Before each move speak a short narration of what you are doing or thinking.';
 
-function drawActivityRing(cx, cy, r) {
-  const outerR = r * 1.7;
-  const t = animTick;
-  ctx.save();
-  switch (petActivity) {
-    case 'idle': {
-      const alpha = 0.12 + 0.08 * Math.sin(t * 0.025);
-      ctx.strokeStyle = `rgba(120,120,120,${alpha})`;
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.arc(cx, cy, outerR, 0, Math.PI * 2);
-      ctx.stroke();
-      break;
-    }
-    case 'thinking': {
-      const a = (t * 0.05) % (Math.PI * 2);
-      ctx.strokeStyle = '#79c0ff';
-      ctx.lineWidth = 2.5;
-      ctx.shadowColor = '#79c0ff';
-      ctx.shadowBlur = 10;
-      ctx.beginPath();
-      ctx.arc(cx, cy, outerR, a, a + Math.PI * 1.2);
-      ctx.stroke();
-      break;
-    }
-    case 'received': {
-      const alpha = 0.5 + 0.5 * Math.sin(t * 0.18);
-      ctx.strokeStyle = `rgba(255,211,61,${alpha})`;
-      ctx.lineWidth = 3;
-      ctx.shadowColor = '#ffd33d';
-      ctx.shadowBlur = 14;
-      ctx.beginPath();
-      ctx.arc(cx, cy, outerR, 0, Math.PI * 2);
-      ctx.stroke();
-      break;
-    }
-    case 'browsing': {
-      const a = (t * 0.07) % (Math.PI * 2);
-      ctx.strokeStyle = '#56d364';
-      ctx.lineWidth = 2.5;
-      ctx.shadowColor = '#56d364';
-      ctx.shadowBlur = 10;
-      ctx.beginPath();
-      ctx.arc(cx, cy, outerR, a, a + Math.PI * 1.5);
-      ctx.stroke();
-      break;
-    }
-    case 'talking': {
-      for (let i = 0; i < 3; i++) {
-        const phase = ((t * 0.04) + i * 0.9) % 3;
-        const alpha = Math.max(0, (1 - phase / 3) * 0.7);
-        ctx.strokeStyle = `rgba(86,211,100,${alpha})`;
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.arc(cx, cy, outerR + phase * 9, 0, Math.PI * 2);
-        ctx.stroke();
-      }
-      break;
-    }
-    case 'moving': {
-      const a = (t * 0.14) % (Math.PI * 2);
-      ctx.strokeStyle = '#f5a623';
-      ctx.lineWidth = 2.5;
-      ctx.shadowColor = '#f5a623';
-      ctx.shadowBlur = 8;
-      ctx.beginPath();
-      ctx.arc(cx, cy, outerR, a, a + Math.PI * 0.7);
-      ctx.stroke();
-      break;
-    }
-  }
-  ctx.restore();
-}
+let ws          = null;
+let state       = null;
+let zorkActive  = false;
 
-function render(s) {
-  const { config, pet } = s;
-  canvas.width  = config.width  * CELL;
-  canvas.height = config.height * CELL;
-
-  // background
-  ctx.fillStyle = '#0d1117';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  // grid lines
-  ctx.strokeStyle = '#1c2128';
-  ctx.lineWidth = 1;
-  for (let x = 0; x <= config.width; x++) {
-    ctx.beginPath();
-    ctx.moveTo(x * CELL, 0);
-    ctx.lineTo(x * CELL, canvas.height);
-    ctx.stroke();
-  }
-  for (let y = 0; y <= config.height; y++) {
-    ctx.beginPath();
-    ctx.moveTo(0, y * CELL);
-    ctx.lineTo(canvas.width, y * CELL);
-    ctx.stroke();
-  }
-
-  const cx = (pet.x + 0.5) * CELL;
-  const cy = (pet.y + 0.5) * CELL;
-  const r  = CELL * 0.36;
-
-  drawActivityRing(cx, cy, r);
-
-  // pet body
-  ctx.fillStyle = MOOD_COLORS[pet.mood] ?? MOOD_COLORS.neutral;
-  ctx.shadowColor = ctx.fillStyle;
-  ctx.shadowBlur  = 10;
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.shadowBlur = 0;
-
-  // direction dot
-  const angle = DIR_ANGLE[pet.facing] ?? 0;
-  const dx = cx + Math.cos(angle) * r * 0.65;
-  const dy = cy + Math.sin(angle) * r * 0.65;
-  ctx.fillStyle = 'rgba(255,255,255,0.9)';
-  ctx.beginPath();
-  ctx.arc(dx, dy, r * 0.22, 0, Math.PI * 2);
-  ctx.fill();
-}
-
-function rafLoop() {
-  animTick++;
-  if (state) render(state);
-  requestAnimationFrame(rafLoop);
-}
-requestAnimationFrame(rafLoop);
-
-function updateHUD(s) {
-  document.getElementById('h-pos').textContent    = `(${s.pet.x}, ${s.pet.y})`;
-  document.getElementById('h-facing').textContent = s.pet.facing;
-  document.getElementById('h-mood').textContent   = s.pet.mood;
-  document.getElementById('h-tick').textContent   = s.tick;
-}
-
-// --- websocket ---
+// ── WebSocket ──────────────────────────────────────────────────────────────
 
 function connect() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   ws = new WebSocket(`${proto}://${location.host}/ws`);
 
-  ws.onopen = () => {
-    document.getElementById('h-ws').textContent = 'connected';
-  };
+  ws.onopen = () => { document.getElementById('h-ws').textContent = 'connected'; };
 
   ws.onmessage = (e) => {
     const msg = JSON.parse(e.data);
@@ -193,21 +31,18 @@ function connect() {
     } else if (msg.type === 'speak') {
       utter(msg.text);
       showSpeech(msg.text);
-      addLog(`pet says: ${msg.text}`, 'log-speak');
     } else if (msg.type === 'transcript') {
       document.getElementById('h-heard').textContent = msg.text;
-      addLog(`you said: "${msg.text}"`);
     } else if (msg.type === 'activity') {
-      petActivity = msg.activity;
       const el = document.getElementById('h-activity');
       el.textContent = msg.activity;
       el.style.color = ACTIVITY_COLORS[msg.activity] ?? '#e6edf3';
-    } else if (msg.type === 'minecraft') {
-      handleMcEvent(msg);
-    } else if (msg.type === 'mc_state') {
-      updateMcHud(msg.data);
     } else if (msg.type === 'brain_log') {
-      addBrainLog(msg.text, msg.level || '');
+      if (msg.level === 'zork') {
+        addZorkOutput(msg.text);
+      } else {
+        addBrainLog(msg.text, msg.level || '');
+      }
     }
   };
 
@@ -215,154 +50,86 @@ function connect() {
     document.getElementById('h-ws').textContent = 'reconnecting…';
     setTimeout(connect, 1500);
   };
-
   ws.onerror = () => ws.close();
 }
 
-// --- movement ---
+// ── HUD ───────────────────────────────────────────────────────────────────
 
-document.addEventListener('keydown', async (e) => {
-  const map = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' };
-  const dir = map[e.key];
-  if (!dir) return;
-  e.preventDefault();
-  await fetch('/move', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ direction: dir }),
-  });
-});
-
-// --- TTS ---
-
-let speakerMuted = false;
-const muteBtn    = document.getElementById('mute-btn');
-const muteStatus = document.getElementById('mute-status');
-
-muteBtn.addEventListener('click', () => {
-  speakerMuted = !speakerMuted;
-  muteStatus.textContent = speakerMuted ? 'speaker off' : 'speaker on';
-  muteBtn.textContent    = speakerMuted ? 'Unmute Speaker' : 'Mute Speaker';
-  if (speakerMuted) speechSynthesis.cancel();
-});
-
-function utter(text) {
-  if (speakerMuted || !window.speechSynthesis) return;
-  const u = new SpeechSynthesisUtterance(text);
-  speechSynthesis.speak(u);
+function updateHUD(s) {
+  document.getElementById('h-mood').textContent = s.pet.mood;
+  document.getElementById('h-tick').textContent = s.tick;
 }
 
-speakBtn.addEventListener('click', async () => {
-  const text = speakInput.value.trim();
-  if (!text) return;
-  await fetch('/hardware/transcript', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text }),
+// ── Zork terminal ─────────────────────────────────────────────────────────
+
+const zorkOutput = document.getElementById('zork-output');
+const zorkStats  = document.getElementById('zork-stats');
+
+function addZorkOutput(raw) {
+  // Format: ">cmd\noutput lines\nscore:N turn:N"
+  const lines = raw.split('\n');
+  const idle = document.getElementById('zork-idle');
+  if (idle) idle.remove();
+
+  lines.forEach((line, i) => {
+    if (line.startsWith('>')) {
+      // Command line
+      const el = document.createElement('div');
+      el.className = 'zork-cmd';
+      el.textContent = line;
+      zorkOutput.appendChild(el);
+    } else if (line.startsWith('score:')) {
+      // Meta line — parse and update stats, don't render
+      const m = line.match(/score:(\d+)\s+turn:(\d+)/);
+      if (m) zorkStats.textContent = `Score: ${m[1]} | Turn: ${m[2]}`;
+    } else if (line.trim() === '') {
+      // Blank line spacer
+      zorkOutput.appendChild(document.createElement('br'));
+    } else {
+      const el = document.createElement('div');
+      // First non-blank line after a command tends to be the room name
+      const isRoomLine = i === 1 && /^[A-Z]/.test(line) && line.length < 40;
+      el.className = isRoomLine ? 'zork-room' : 'zork-line';
+      el.textContent = line;
+      zorkOutput.appendChild(el);
+    }
   });
-  speakInput.value = '';
-});
 
-speakInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') speakBtn.click();
-});
+  zorkOutput.scrollTop = zorkOutput.scrollHeight;
+}
 
-// --- microphone ---
+// ── Zork button ───────────────────────────────────────────────────────────
 
-const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-let recognition = null;
-let micActive = false;
+const zorkBtn    = document.getElementById('zork-btn');
+const zorkStatus = document.getElementById('zork-status');
 
-micBtn.addEventListener('click', () => {
-  if (micActive) {
-    micActive = false;
-    recognition?.stop();
-    recognition = null;
-    micStatus.textContent = 'mic off';
-    micStatus.classList.remove('listening');
-    micBtn.textContent = 'Enable Mic';
-    return;
-  }
-  if (!SR) {
-    micStatus.textContent = 'not supported in this browser';
-    return;
-  }
-  micActive = true;
-  micBtn.textContent = 'Disable Mic';
-  startRecognition();
-});
-
-function startRecognition() {
-  recognition = new SR();
-  recognition.continuous = true;
-  recognition.interimResults = false;
-  recognition.lang = 'en-US';
-
-  recognition.onstart = () => {
-    micStatus.textContent = 'listening…';
-    micStatus.classList.add('listening');
-  };
-
-  recognition.onresult = (e) => {
-    const text = e.results[e.results.length - 1][0].transcript.trim();
-    if (!text) return;
-    fetch('/hardware/transcript', {
+zorkBtn.addEventListener('click', async () => {
+  if (zorkActive) {
+    // Stop — clear directive
+    await fetch('/directive', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
-    }).catch(() => {});
-  };
-
-  recognition.onerror = (e) => {
-    micStatus.textContent = `error: ${e.error}`;
-    micStatus.classList.remove('listening');
-  };
-
-  recognition.onend = () => {
-    if (micActive) startRecognition(); // auto-restart while active
-  };
-
-  recognition.start();
-}
-
-// --- camera ---
-
-camBtn.addEventListener('click', async () => {
-  if (camStream) {
-    camStream.getTracks().forEach(t => t.stop());
-    camStream = null;
-    video.srcObject = null;
-    clearInterval(frameTimer);
-    camStatus.textContent = 'camera off';
-    camBtn.textContent = 'Enable Camera';
-    return;
-  }
-  try {
-    camStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-    video.srcObject = camStream;
-    camStatus.textContent = 'camera on — sending frames';
-    camBtn.textContent = 'Disable Camera';
-    frameTimer = setInterval(sendFrame, 1000);
-  } catch (err) {
-    camStatus.textContent = `error: ${err.message}`;
+      body: JSON.stringify({ text: 'Explore the grid. Speak when something interesting happens.' }),
+    });
+    zorkActive = false;
+    zorkBtn.textContent = '▶ Play Zork';
+    zorkBtn.classList.remove('active');
+    zorkStatus.textContent = 'not playing';
+  } else {
+    // Start — set Zork directive
+    await fetch('/directive', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: ZORK_DIRECTIVE }),
+    });
+    zorkActive = true;
+    zorkBtn.textContent = '■ Stop Zork';
+    zorkBtn.classList.add('active');
+    zorkStatus.textContent = 'playing…';
   }
 });
 
-function sendFrame() {
-  if (!camStream) return;
-  const off = document.createElement('canvas');
-  off.width  = 320;
-  off.height = 240;
-  off.getContext('2d').drawImage(video, 0, 0, 320, 240);
-  const dataUrl = off.toDataURL('image/jpeg', 0.7);
-  fetch('/hardware/camera-frame', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ frame: dataUrl }),
-  }).catch(() => {});
-}
-
-// --- speech display ---
+// ── Speech display ────────────────────────────────────────────────────────
 
 let speechClearTimer = null;
 
@@ -377,83 +144,124 @@ function showSpeech(text) {
   }, 8000);
 }
 
-// --- log ---
+// ── TTS ───────────────────────────────────────────────────────────────────
 
-function addLog(msg, cls = '') {
-  const el = document.createElement('div');
-  el.className = `log-entry ${cls}`;
-  el.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
-  log.prepend(el);
+let speakerMuted = false;
+document.getElementById('mute-btn').addEventListener('click', () => {
+  speakerMuted = !speakerMuted;
+  document.getElementById('mute-status').textContent = speakerMuted ? 'speaker off' : 'speaker on';
+  document.getElementById('mute-btn').textContent    = speakerMuted ? 'Unmute Speaker' : 'Mute Speaker';
+  if (speakerMuted) speechSynthesis.cancel();
+});
+
+function utter(text) {
+  if (speakerMuted || !window.speechSynthesis) return;
+  const u = new SpeechSynthesisUtterance(text);
+  speechSynthesis.speak(u);
 }
 
-// --- minecraft ---
+// ── Send message ──────────────────────────────────────────────────────────
 
-const mcBtn    = document.getElementById('mc-btn');
-const mcStatus = document.getElementById('mc-status');
-let mcConnected = false;
+const speakInput = document.getElementById('speak-input');
+const speakBtn   = document.getElementById('speak-btn');
 
-mcBtn.addEventListener('click', async () => {
-  if (mcConnected) {
-    const r = await fetch('/minecraft/leave', { method: 'POST' });
-    if (r.ok) {
-      mcConnected = false;
-      mcStatus.textContent = 'not in game';
-      mcBtn.textContent = 'Join Minecraft';
-      mcBtn.style.background = '#5d9e22';
-      addLog('Pepper left Minecraft');
-    }
-    return;
-  }
-  const raw = prompt('Minecraft server address:', 'mcserver:25565');
-  if (!raw) return;
-  const [host, portStr] = raw.includes(':') ? raw.split(':') : [raw, '25565'];
-  const port = parseInt(portStr) || 25565;
-  mcStatus.textContent = `connecting to ${host}:${port}…`;
-  const r = await fetch('/minecraft/join', {
+speakBtn.addEventListener('click', async () => {
+  const text = speakInput.value.trim();
+  if (!text) return;
+  await fetch('/hardware/transcript', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ host, port }),
+    body: JSON.stringify({ text }),
   });
-  const data = await r.json();
-  if (data.ok) {
-    mcConnected = true;
-    mcStatus.textContent = `in game: ${host}:${port}`;
-    mcBtn.textContent = 'Leave Minecraft';
-    mcBtn.style.background = '#b91c1c';
-    addLog(`Pepper joined Minecraft at ${host}:${port}`);
-  } else {
-    mcStatus.textContent = `failed: ${data.error ?? 'unknown'}`;
+  speakInput.value = '';
+});
+speakInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') speakBtn.click(); });
+
+// ── Microphone ────────────────────────────────────────────────────────────
+
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let recognition = null;
+let micActive = false;
+
+document.getElementById('mic-btn').addEventListener('click', () => {
+  if (micActive) {
+    micActive = false;
+    recognition?.stop();
+    recognition = null;
+    document.getElementById('mic-status').textContent = 'mic off';
+    document.getElementById('mic-btn').textContent = 'Enable Mic';
+    return;
+  }
+  if (!SR) { document.getElementById('mic-status').textContent = 'not supported'; return; }
+  micActive = true;
+  document.getElementById('mic-btn').textContent = 'Disable Mic';
+  startRecognition();
+});
+
+function startRecognition() {
+  recognition = new SR();
+  recognition.continuous = true;
+  recognition.interimResults = false;
+  recognition.lang = 'en-US';
+  recognition.onstart = () => {
+    document.getElementById('mic-status').textContent = 'listening…';
+  };
+  recognition.onresult = (e) => {
+    const text = e.results[e.results.length - 1][0].transcript.trim();
+    if (!text) return;
+    fetch('/hardware/transcript', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    }).catch(() => {});
+  };
+  recognition.onerror = (e) => { document.getElementById('mic-status').textContent = `error: ${e.error}`; };
+  recognition.onend = () => { if (micActive) startRecognition(); };
+  recognition.start();
+}
+
+// ── Camera ────────────────────────────────────────────────────────────────
+
+let camStream  = null;
+let frameTimer = null;
+const video    = document.getElementById('cam');
+
+document.getElementById('cam-btn').addEventListener('click', async () => {
+  if (camStream) {
+    camStream.getTracks().forEach(t => t.stop());
+    camStream = null;
+    video.srcObject = null;
+    video.style.display = 'none';
+    clearInterval(frameTimer);
+    document.getElementById('cam-status').textContent = 'camera off';
+    document.getElementById('cam-btn').textContent = 'Enable Camera';
+    return;
+  }
+  try {
+    camStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    video.srcObject = camStream;
+    video.style.display = 'block';
+    document.getElementById('cam-status').textContent = 'camera on';
+    document.getElementById('cam-btn').textContent = 'Disable Camera';
+    frameTimer = setInterval(sendFrame, 1000);
+  } catch (err) {
+    document.getElementById('cam-status').textContent = `error: ${err.message}`;
   }
 });
 
-// sync minecraft state from websocket
-function handleMcEvent(msg) {
-  if (msg.type !== 'minecraft') return;
-  mcConnected = msg.connected;
-  if (msg.connected) {
-    mcStatus.textContent = `in game: ${msg.server}`;
-    mcBtn.textContent = 'Leave Minecraft';
-    mcBtn.style.background = '#b91c1c';
-  } else {
-    mcStatus.textContent = 'not in game';
-    mcBtn.textContent = 'Join Minecraft';
-    mcBtn.style.background = '#5d9e22';
-    document.getElementById('mc-hud').style.display = 'none';
-  }
+function sendFrame() {
+  if (!camStream) return;
+  const off = document.createElement('canvas');
+  off.width = 320; off.height = 240;
+  off.getContext('2d').drawImage(video, 0, 0, 320, 240);
+  fetch('/hardware/camera-frame', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ frame: off.toDataURL('image/jpeg', 0.7) }),
+  }).catch(() => {});
 }
 
-function updateMcHud(data) {
-  const hud = document.getElementById('mc-hud');
-  if (!data || !data.connected) { hud.style.display = 'none'; return; }
-  hud.style.display = 'block';
-  const p = data.position || {};
-  document.getElementById('mc-pos').textContent = `${p.x ?? '?'},${p.y ?? '?'},${p.z ?? '?'}`;
-  document.getElementById('mc-health').textContent = `${data.health ?? '?'}/20`;
-  document.getElementById('mc-food').textContent = `${data.food ?? '?'}/20`;
-  document.getElementById('mc-mode').textContent = data.game_mode ?? '?';
-  const entities = (data.nearby_entities || []).slice(0, 3).map(e => `${e.name}(${e.distance}m)`).join(' ');
-  document.getElementById('mc-nearby').textContent = entities || 'none';
-}
+// ── Brain log ─────────────────────────────────────────────────────────────
 
 const brainLog = document.getElementById('brain-log');
 function addBrainLog(text, level) {
@@ -465,7 +273,20 @@ function addBrainLog(text, level) {
   brainLog.scrollTop = brainLog.scrollHeight;
 }
 
-// --- init ---
+// ── Keyboard movement (still works for grid) ──────────────────────────────
+
+document.addEventListener('keydown', async (e) => {
+  const map = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' };
+  const dir = map[e.key];
+  if (!dir) return;
+  e.preventDefault();
+  await fetch('/move', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ direction: dir }),
+  });
+});
+
+// ── Init ──────────────────────────────────────────────────────────────────
 
 connect();
-addLog('simulator ready — use arrow keys to move');
