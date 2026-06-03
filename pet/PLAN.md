@@ -234,6 +234,39 @@ cd minecraft && npm install && node bridge.js
 
 ---
 
+## Phase 6 — Custom Game for Pepper (Future)
+
+Build a purpose-made text adventure that leverages Pepper's LLM brain better than Zork.
+
+### Goals
+- **Vivid in-game images**: generate a scene image (DALL-E or Stable Diffusion) for each new room/event and display it on the web console
+- **Richer narration**: rooms described in prose that suits Pepper's personality, not 1980s parser terse
+- **Turn-based, LLM-native**: world state stored as structured JSON, not a frozen z-machine binary
+- **Persistent world**: Pepper's choices change the world across sessions (quests, NPC memory)
+
+### Rough Architecture
+```
+game_engine/
+├── world.py        # Room graph, item/NPC state, serialised to JSON
+├── engine.py       # Process Pepper's action → update state → return description
+├── image_gen.py    # Generate room image via OpenAI/SD on first visit; cache to data/
+└── server.py       # FastAPI: POST /action, GET /state, GET /image/<room>
+```
+- Brain calls `game(command="go north")` → engine returns `{description, image_url, exits, objects}`
+- Web console shows the room image alongside the SVG map
+- Image cached on first visit so Pepper doesn't regenerate the same room
+
+### Why better than Zork
+- Images make the world vivid and shareable
+- World is designed around Pepper's character (exploration, curiosity, emotional moments)
+- No parsing hacks — engine speaks structured JSON natively to the brain
+- Can extend: multiplayer, user-directed quests, NPCs with memory
+
+### When to build
+After Zork exploration is stable and Pepper has a good play style. Start with a small 5-room demo world.
+
+---
+
 ## Phase 5 — Extras
 
 - Emotion state machine (mood persists across rounds, decays over time)
